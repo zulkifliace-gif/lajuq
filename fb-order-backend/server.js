@@ -206,7 +206,8 @@ const rateLimit = require('express-rate-limit');
 // Security HTTP headers
 app.use(helmet({
   contentSecurityPolicy: false, // allow inline scripts & dynamic assets
-  crossOriginEmbedderPolicy: false
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" } // Benarkan Vercel load gambar dari VPS
 }));
 
 // Rate Limiter for API endpoints (DDoS & Brute-force protection)
