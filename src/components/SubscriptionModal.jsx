@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CreditCard, CheckCircle2, ShieldCheck, Zap, X, ExternalLink, RefreshCw, Sparkles, LogIn, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getBackendBaseUrl } from '../utils/apiConfig';
 import AuthModal from './AuthModal';
 
 export default function SubscriptionModal({ isOpen, onClose, currentTenantId = 'demo-restaurant', subscriptionStatus = 'trialing', planType = 'starter' }) {
@@ -38,7 +39,7 @@ export default function SubscriptionModal({ isOpen, onClose, currentTenantId = '
   const activeStatus = tenant?.subscription_status || subscriptionStatus || 'trialing';
   const activePlan = tenant?.plan_type || planType || 'starter';
 
-  const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+  const API_BASE_URL = getBackendBaseUrl();
 
   const executeStripeCheckout = async (selectedPlan, months, tenantId) => {
     setLoadingPlan(selectedPlan);

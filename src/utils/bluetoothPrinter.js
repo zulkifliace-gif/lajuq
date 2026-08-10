@@ -4,6 +4,7 @@
  * Supports dynamic logo raster generation scaled auto to selected paper width.
  */
 import { calculateReceiptTotals } from './receiptCalculator';
+import { getBackendBaseUrl } from './apiConfig';
 
 // Common GATT Service UUIDs used by Bluetooth ESC/POS Thermal Printers
 const PRINTER_SERVICES = [
@@ -390,7 +391,7 @@ export async function printReceiptBluetooth(printerConnection, data, settings = 
   append(ESC_POS.ALIGN_CENTER);
   
   const cleanSessionIdStr = String(sessionId || '').replace(/^SES-/, '');
-  const baseUrl = (typeof window !== 'undefined' && window.location) ? window.location.origin : 'http://localhost:5000';
+  const baseUrl = (typeof window !== 'undefined' && window.location) ? window.location.origin : getBackendBaseUrl();
   const qrUrlStr = `${baseUrl}/o?t=${tableNumber}&s=${cleanSessionIdStr}`;
   const urlBytes = textToBytes(qrUrlStr);
   const storeLen = urlBytes.length + 3;

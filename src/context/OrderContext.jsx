@@ -1745,7 +1745,8 @@ export function OrderProvider({ children }) {
 
     // 3. Reset Backend SQLite Database if active
     try {
-      await fetch('http://localhost:5000/api/reset', { method: 'POST' });
+      const BASE = getBackendBaseUrl();
+      await fetch(`${BASE}/api/reset`, { method: 'POST' });
     } catch (e) {
       console.warn('Backend reset call bypassed (server offline or local mode)');
     }

@@ -50,7 +50,8 @@ router.post('/create-checkout', async (req, res) => {
           })
           .eq('id', tenant_id);
       }
-      return res.json({ url: success_url || `http://localhost:5173/staff?subscription=success` });
+      const frontendUrl = process.env.FRONTEND_URL || 'https://lajuq-system.vercel.app';
+      return res.json({ url: success_url || `${frontendUrl}/staff?subscription=success` });
     }
 
     // 2. PAID PLANS CHECKOUT (4 / 8 / 12 MONTHS)
@@ -131,9 +132,11 @@ router.post('/create-checkout', async (req, res) => {
           tenant_id,
         }
       },
-      success_url: success_url || `http://localhost:5173/staff?subscription=success&tenant_id=${tenant_id}`,
-      cancel_url: cancel_url || `http://localhost:5173/staff?subscription=cancelled`,
     };
+
+    const frontendUrl = process.env.FRONTEND_URL || 'https://lajuq-system.vercel.app';
+    sessionParams.success_url = success_url || `${frontendUrl}/staff?subscription=success&tenant_id=${tenant_id}`;
+    sessionParams.cancel_url = cancel_url || `${frontendUrl}/staff?subscription=cancelled`;
 
     if (customer_email) {
       sessionParams.customer_email = customer_email;
@@ -181,7 +184,7 @@ router.post('/create-portal', async (req, res) => {
 
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: tenant.stripe_customer_id,
-      return_url: return_url || 'http://localhost:5173/staff',
+      return_url: return_url || `${process.env.FRONTEND_URL || 'https://lajuq-system.vercel.app'}/staff`,
     });
 
     return res.json({ url: portalSession.url });
