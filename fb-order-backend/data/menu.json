@@ -1,0 +1,12 @@
+[
+  {
+    "id": "73d37c38-193b-421a-a8f8-2049bacc2b8d",
+    "name": "burger kampung",
+    "category": "Nasi",
+    "price": 4,
+    "description": "",
+    "image": "http://localhost:5000/uploads/menu-images/menu-e9262e10-4c34-4fc5-8483-60148460793f-1786079930463-2116.jpeg",
+    "isActive": true,
+    "optionGroups": []
+  }
+]

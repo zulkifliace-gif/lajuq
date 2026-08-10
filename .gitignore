@@ -1,0 +1,13 @@
+node_modules
+.env
+.env.local
+.env.*
+fb-order-backend/.env
+*.log
+scratch/
+.DS_Store
+*.db
+*.sqlite
+*.db-shm
+*.db-wal
+uploads/

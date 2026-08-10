@@ -1,0 +1,934 @@
+const Database = require('better-sqlite3');
+const path = require('path');
+
+// Initialize SQLite Database in WAL mode for maximum performance
+const dbPath = path.join(__dirname, 'fb_ordering.db');
+const db = new Database(dbPath);
+
+// Enable WAL mode (Write-Ahead Logging) + 5s busy timeout for concurrent writes
+db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
+
+// Initialize Tables Schema
+function initDatabase() {
+  // 1. Table Schema: tables
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tables (
+      table_number INTEGER PRIMARY KEY,
+      status TEXT CHECK(status IN ('KOSONG', 'ADA_PELANGGAN', 'SEDANG_MAKAN')) DEFAULT 'KOSONG',
+      current_session_id TEXT NULL
+    );
+  `);
+
+  // 2. Table Schema: sessions
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      session_id TEXT PRIMARY KEY,
+      table_number INTEGER NOT NULL,
+      status TEXT CHECK(status IN ('ACTIVE', 'CLOSED')) DEFAULT 'ACTIVE',
+      customer_name TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      closed_at DATETIME NULL
+    );
+  `);
+
+  // Migrations for sessions table
+  try { db.exec(`ALTER TABLE sessions ADD COLUMN customer_name TEXT DEFAULT ''`); } catch(e) {}
+  try { db.exec(`ALTER TABLE sessions ADD COLUMN is_cancelled INTEGER DEFAULT 0`); } catch(e) {}
+
+  // 3. Table Schema: orders
+  // NOTE: kitchen_status has no CHECK constraint so PAYMENT_PENDING (Pre-Pay mode) is allowed.
+  // ignore_check_constraints = ON is set below as an extra safety net for existing DBs.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS orders (
+      order_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      table_number INTEGER NOT NULL,
+      customer_name TEXT DEFAULT '',
+      items TEXT NOT NULL,
+      subtotal REAL NOT NULL,
+      tax REAL NOT NULL,
+      total_amount REAL NOT NULL,
+      special_instruction TEXT,
+      kitchen_status TEXT DEFAULT 'PENDING',
+      payment_status TEXT CHECK(payment_status IN ('UNPAID', 'PAID')) DEFAULT 'UNPAID',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Migrations for orders table
+  try { db.exec(`ALTER TABLE orders ADD COLUMN customer_name TEXT DEFAULT ''`); } catch(e) {}
+  try { db.exec(`ALTER TABLE orders ADD COLUMN kitchen_cancel_reason TEXT DEFAULT NULL`); } catch(e) {}
+  try { db.exec(`ALTER TABLE orders ADD COLUMN cooking_started_at INTEGER DEFAULT NULL`); } catch(e) {}
+  try { db.exec(`ALTER TABLE orders ADD COLUMN order_type TEXT DEFAULT 'DINE_IN'`); } catch(e) {}
+
+  // KDS Wave Throttling Migrations
+  try { db.exec(`ALTER TABLE orders ADD COLUMN wave_number INTEGER DEFAULT 1`); } catch(e) {}
+  try { db.exec(`ALTER TABLE orders ADD COLUMN queue_position INTEGER DEFAULT NULL`); } catch(e) {}
+  try { db.exec(`ALTER TABLE orders ADD COLUMN item_weight INTEGER DEFAULT 1`); } catch(e) {}
+  try { db.exec(`ALTER TABLE orders ADD COLUMN entered_wave_1_at DATETIME NULL`); } catch(e) {}
+
+  // CRITICAL: Ignore check constraints on existing DBs.
+  // Allows PAYMENT_PENDING value in kitchen_status column for Pre-Pay (Bayar Dulu) mode.
+  db.pragma('ignore_check_constraints = ON');
+
+  // 4. Table Schema: settings
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+
+  // 5. Table Schema: customer_feedbacks
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customer_feedbacks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      feedback_id TEXT UNIQUE NOT NULL,
+      order_id TEXT NOT NULL,
+      table_number INTEGER,
+      customer_name TEXT,
+      rating TEXT CHECK(rating IN ('GOOD', 'BAD')) NOT NULL,
+      commented_items TEXT DEFAULT '[]',
+      comment TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // 6. Table Schema: push_subscriptions (Cleaned up on CLOSE_SESSION)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      session_id TEXT PRIMARY KEY,
+      table_number INTEGER NOT NULL,
+      subscription_json TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  const defaultSettings = {
+    paperWidth: '58mm',
+    tableCount: 20,
+    headerTitle: 'RESTORAN RASA SELERA',
+    headerAddress: 'No. 18, Jalan Telawi 3, Bangsar, 59100 Kuala Lumpur',
+    footerMsg: 'Terima Kasih! Sila Datang Lagi.',
+    logoUrl: null,
+    staffPin: '1234',
+    waveCapacity: 10,
+    waveMode: true,
+    customerMenuTemplate: 'modern',
+    customerMenuViewMode: 'grid',
+    operationalMode: 'POSTPAY'   // 'POSTPAY' = Makan Dulu | 'PREPAY' = Bayar Dulu
+  };
+
+  const currentSettingsRow = db.prepare("SELECT value FROM settings WHERE key = 'receipt_settings'").get();
+  if (!currentSettingsRow) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('receipt_settings', ?)").run(JSON.stringify(defaultSettings));
+  }
+
+  // Auto-populate Tables 1 to 20 if table count is 0
+  const countStmt = db.prepare('SELECT COUNT(*) AS count FROM tables');
+  const { count } = countStmt.get();
+
+  if (count === 0) {
+    const insertTableStmt = db.prepare('INSERT INTO tables (table_number, status, current_session_id) VALUES (?, ?, ?)');
+    const insertMany = db.transaction((tablesList) => {
+      for (const t of tablesList) {
+        insertTableStmt.run(t, 'KOSONG', null);
+      }
+    });
+    const tableNumbers = Array.from({ length: 20 }, (_, i) => i + 1);
+    insertMany(tableNumbers);
+    console.log('✅ Initialized 20 Restaurant Tables in SQLite Database.');
+  }
+}
+
+// Execute DB initialization — non-fatal if it partially fails (e.g. migration already done)
+try {
+  initDatabase();
+} catch (initErr) {
+  console.error('❌ DB Init warning (non-fatal):', initErr.message);
+}
+
+// Safe helper to parse JSON strings without throwing unhandled exceptions
+function safeJsonParse(str, fallback = []) {
+  if (!str) return fallback;
+  if (typeof str === 'object') return str;
+  try {
+    return JSON.parse(str);
+  } catch (e) {
+    console.warn('⚠️ safeJsonParse caught corrupted JSON string:', e.message);
+    return fallback;
+  }
+}
+
+// --------------------------------------------------
+// HELPER FUNCTIONS & WAVE THROTTLING ENGINE
+// --------------------------------------------------
+
+/**
+ * Calculate item volume weight for a given order (Heavy Order Weighting)
+ * 1-4 items = 1 weight unit
+ * 5-8 items = 2 weight units
+ * >8 items  = 3 weight units
+ */
+function calculateItemWeight(items) {
+  const parsed = safeJsonParse(items, []);
+  if (!Array.isArray(parsed)) return 1;
+  const totalQty = parsed.reduce((sum, item) => sum + (Number(item?.quantity) || 1), 0);
+  if (totalQty > 8) return 3;
+  if (totalQty >= 5) return 2;
+  return 1;
+}
+
+/**
+ * Get Settings from SQLite
+ */
+function getSettings() {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'receipt_settings'").get();
+    if (!row || !row.value) return {};
+    return safeJsonParse(row.value, {});
+  } catch(e) {
+    console.error('getSettings Error:', e.message);
+    return {};
+  }
+}
+
+/**
+ * Atomic Wave Queue Promotion Evaluator (Strict FIFO - No Hole Filling!)
+ * Must be executed within SQLite transaction when slots in Wave 1 open up.
+ */
+function checkAndPromoteWaveQueueAtomic() {
+  try {
+    const settings = getSettings();
+    const waveMode = settings.waveMode !== false;
+    const waveCapacity = Number(settings.waveCapacity) || 10;
+
+    if (!waveMode || waveCapacity <= 0) {
+      // If Wave System is OFF, promote ALL waiting Wave 2 orders to Wave 1 immediately
+      db.prepare(`
+        UPDATE orders 
+        SET wave_number = 1, queue_position = NULL, entered_wave_1_at = COALESCE(entered_wave_1_at, CURRENT_TIMESTAMP)
+        WHERE wave_number = 2 AND kitchen_status IN ('PENDING', 'COOKING')
+      `).run();
+      return;
+    }
+
+    // 1. Calculate current Wave 1 active weight (PENDING, COOKING, READY — NOT PAYMENT_PENDING)
+    const wave1WeightRow = db.prepare(`
+      SELECT COALESCE(SUM(item_weight), 0) AS total_weight 
+      FROM orders 
+      WHERE wave_number = 1 AND kitchen_status IN ('PENDING', 'COOKING', 'READY')
+    `).get();
+    const currentWave1Weight = Number(wave1WeightRow?.total_weight || 0);
+
+    let availableSlots = waveCapacity - currentWave1Weight;
+
+    if (availableSlots > 0) {
+      // 2. Fetch waiting Wave 2 orders strictly by queue_position ASC, created_at ASC
+      const waitingOrders = db.prepare(`
+        SELECT order_id, item_weight, queue_position 
+        FROM orders 
+        WHERE wave_number = 2 AND kitchen_status IN ('PENDING', 'COOKING')
+        ORDER BY queue_position ASC, created_at ASC
+      `).all();
+
+      const promoteStmt = db.prepare(`
+        UPDATE orders 
+        SET wave_number = 1, queue_position = NULL, entered_wave_1_at = CURRENT_TIMESTAMP 
+        WHERE order_id = ?
+      `);
+
+      for (const ord of waitingOrders) {
+        const weight = Number(ord.item_weight) || 1;
+        if (weight <= availableSlots) {
+          promoteStmt.run(ord.order_id);
+          availableSlots -= weight;
+        } else {
+          // STRICT FIFO RULE: Do NOT allow smaller orders behind to cut the queue line!
+          break;
+        }
+      }
+    }
+
+    // 3. Re-index remaining Wave 2 orders cleanly to maintain queue integrity
+    const remainingQueue = db.prepare(`
+      SELECT order_id 
+      FROM orders 
+      WHERE wave_number = 2 AND kitchen_status IN ('PENDING', 'COOKING')
+      ORDER BY created_at ASC
+    `).all();
+
+    const reindexStmt = db.prepare(`UPDATE orders SET queue_position = ? WHERE order_id = ?`);
+    remainingQueue.forEach((ord, index) => {
+      reindexStmt.run(index + 1, ord.order_id);
+    });
+  } catch (waveErr) {
+    // Wave queue failure is NON-FATAL — log and continue so order transaction still succeeds
+    console.error('⚠️  checkAndPromoteWaveQueueAtomic Error (non-fatal):', waveErr.message);
+  }
+}
+
+/**
+ * Get Complete System State from SQLite — always returns a valid object
+ */
+function getSystemState() {
+  try {
+    const tables = db.prepare('SELECT * FROM tables ORDER BY table_number ASC').all() || [];
+    const sessions = db.prepare('SELECT * FROM sessions ORDER BY created_at DESC').all() || [];
+    const orders = db.prepare('SELECT * FROM orders ORDER BY created_at ASC').all() || [];
+    const receiptSettings = getSettings() || {};
+
+    // Parse items JSON in orders safely
+    const parsedOrders = orders.map(ord => {
+      const items = safeJsonParse(ord.items, []);
+      return { ...ord, items };
+    });
+
+    // Convert sessions array to keyed object for fast frontend lookup
+    const sessionsMap = {};
+    sessions.forEach(s => {
+      if (s && s.session_id) sessionsMap[s.session_id] = s;
+    });
+
+    // feedbacks TIDAK disertakan dalam state broadcast — diuruskan 100% oleh Supabase Cloud
+    // Frontend akan fetch terus dari GET /api/feedbacks (Supabase) secara berasingan
+    return { tables, sessions: sessionsMap, orders: parsedOrders, feedbacks: [], receiptSettings, settings: receiptSettings };
+  } catch (err) {
+    console.error('getSystemState Error:', err.message);
+    return { tables: [], sessions: {}, orders: [], feedbacks: [], receiptSettings: {}, settings: {} };
+  }
+}
+
+
+/**
+ * Update Settings in SQLite & Trigger Atomic Wave Check
+ */
+function updateSettings(newSettings) {
+  const current = getSettings();
+  const merged = { ...current, ...newSettings };
+  
+  const transaction = db.transaction(() => {
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('receipt_settings', ?)").run(JSON.stringify(merged));
+
+    // Dynamically expand/contract tables grid in SQLite if tableCount changed
+    if (newSettings.tableCount && Number(newSettings.tableCount) > 0) {
+      const targetCount = Number(newSettings.tableCount);
+      const tables = db.prepare('SELECT * FROM tables ORDER BY table_number ASC').all();
+      if (targetCount > tables.length) {
+        const insertStmt = db.prepare('INSERT INTO tables (table_number, status, current_session_id) VALUES (?, ?, ?)');
+        for (let i = tables.length + 1; i <= targetCount; i++) {
+          insertStmt.run(i, 'KOSONG', null);
+        }
+      } else if (targetCount < tables.length) {
+        db.prepare("DELETE FROM tables WHERE table_number > ? AND (status = 'KOSONG' OR current_session_id IS NULL)").run(targetCount);
+      }
+    }
+
+    // Atomic wave re-evaluation when settings change
+    checkAndPromoteWaveQueueAtomic();
+  });
+
+  transaction();
+  return getSystemState();
+}
+
+/**
+ * Action 1: Create New Session for Table
+ * Idempotent: if session_id already exists, returns current state without throwing.
+ */
+function createSession(tableNumber, sessionId) {
+  const tableNum = Number(tableNumber);
+
+  // Idempotency: session already created (double-click, retry, or duplicate socket event)
+  const existing = db.prepare('SELECT session_id FROM sessions WHERE session_id = ?').get(sessionId);
+  if (existing) {
+    console.log(`ℹ️  createSession: Session ${sessionId} already exists — returning current state (idempotent).`);
+    return getSystemState();
+  }
+
+  const insertSession = db.prepare(`
+    INSERT INTO sessions (session_id, table_number, status, created_at)
+    VALUES (?, ?, 'ACTIVE', CURRENT_TIMESTAMP)
+  `);
+
+  const updateTable = db.prepare(`
+    INSERT INTO tables (table_number, status, current_session_id)
+    VALUES (?, 'ADA_PELANGGAN', ?)
+    ON CONFLICT(table_number) DO UPDATE SET status = 'ADA_PELANGGAN', current_session_id = excluded.current_session_id
+  `);
+
+  const transaction = db.transaction(() => {
+    insertSession.run(sessionId, tableNum);
+    updateTable.run(tableNum, sessionId);
+  });
+
+  transaction();
+  return getSystemState();
+}
+
+/**
+ * Action 2: Submit New Order (Atomic Wave Throttling + Stock Deduction)
+ * Idempotent: if order_id already exists, returns current state without throwing.
+ */
+function submitOrder(payload) {
+  const {
+    order_id,
+    session_id,
+    table_number,
+    customer_name,
+    order_type,
+    items,
+    subtotal,
+    tax,
+    total_amount,
+    special_instruction
+  } = payload;
+
+  // IDEMPOTENCY: Order already submitted (duplicate socket event or client retry)
+  const existingOrder = db.prepare('SELECT order_id FROM orders WHERE order_id = ?').get(order_id);
+  if (existingOrder) {
+    console.log(`ℹ️  submitOrder: Order ${order_id} already exists — returning current state (idempotent).`);
+    return getSystemState();
+  }
+
+  // 1. Verify session is still ACTIVE (Check SQLite or accept valid active session)
+  const sessionStmt = db.prepare('SELECT status FROM sessions WHERE session_id = ?');
+  const sessionRow = sessionStmt.get(session_id);
+
+  if (sessionRow && sessionRow.status === 'CLOSED') {
+    throw new Error('SESSION_CLOSED');
+  }
+
+  // Ensure session exists in local SQLite for foreign-key / legacy lookup
+  if (!sessionRow && session_id && table_number) {
+    try {
+      db.prepare('INSERT OR IGNORE INTO sessions (session_id, table_number, status) VALUES (?, ?, ?)')
+        .run(session_id, Number(table_number), 'ACTIVE');
+      db.prepare('INSERT OR IGNORE INTO tables (table_number, status, current_session_id) VALUES (?, ?, ?)')
+        .run(Number(table_number), 'ADA_PELANGGAN', session_id);
+    } catch (e) {
+      console.warn('Auto-session create warn:', e.message);
+    }
+  }
+
+  const tableNum = Number(table_number);
+  const itemsJson = typeof items === 'string' ? items : JSON.stringify(items);
+  const formattedName = (customer_name || '').trim().replace(/\b\w/g, c => c.toUpperCase());
+  const formattedOrderType = order_type === 'TAKEAWAY' ? 'TAKEAWAY' : 'DINE_IN';
+
+  const itemWeight = calculateItemWeight(items);
+  const settings = getSettings();
+  const waveMode = settings.waveMode !== false;
+  const waveCapacity = Number(settings.waveCapacity) || 10;
+  const isPrepayMode = settings.operationalMode === 'PREPAY';
+  const initialKitchenStatus = isPrepayMode ? 'PAYMENT_PENDING' : 'PENDING';
+
+  const insertOrder = db.prepare(`
+    INSERT INTO orders (
+      order_id, session_id, table_number, customer_name, order_type, items, subtotal, tax, 
+      total_amount, special_instruction, kitchen_status, payment_status, wave_number, 
+      queue_position, item_weight, entered_wave_1_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'UNPAID', ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `);
+
+  const updateTable = db.prepare(`
+    UPDATE tables
+    SET status = 'SEDANG_MAKAN'
+    WHERE table_number = ?
+  `);
+
+  const updateSessionName = db.prepare(`
+    UPDATE sessions SET customer_name = ? WHERE session_id = ? AND (customer_name IS NULL OR customer_name = '')
+  `);
+
+  const transaction = db.transaction(() => {
+    // Determine Wave assignment atomically within SQLite WAL Mutex
+    let assignedWave = 1;
+    let queuePos = null;
+
+    if (waveMode && waveCapacity > 0) {
+      const wave1WeightRow = db.prepare(`
+        SELECT COALESCE(SUM(item_weight), 0) AS total_weight 
+        FROM orders 
+        WHERE wave_number = 1 AND kitchen_status IN ('PENDING', 'COOKING', 'READY')
+      `).get();
+      const currentWave1Weight = Number(wave1WeightRow?.total_weight || 0);
+
+      if (currentWave1Weight + itemWeight > waveCapacity) {
+        assignedWave = 2;
+        const maxPosRow = db.prepare(`
+          SELECT COALESCE(MAX(queue_position), 0) AS max_pos 
+          FROM orders 
+          WHERE wave_number = 2 AND kitchen_status IN ('PENDING', 'COOKING')
+        `).get();
+        queuePos = Number(maxPosRow?.max_pos || 0) + 1;
+      }
+    }
+
+    const enteredAt = assignedWave === 1 ? new Date().toISOString() : null;
+
+    // Helper to extract option names from an order item
+    const extractOptionNames = (item) => {
+      const result = [];
+      if (item.selectedOptions && typeof item.selectedOptions === 'object') {
+        Object.values(item.selectedOptions).forEach(val => {
+          if (Array.isArray(val)) {
+            val.forEach(v => { if (v && typeof v === 'string') result.push(v.trim()); });
+          } else if (val && typeof val === 'string') {
+            result.push(val.trim());
+          }
+        });
+      } else if (item.options && typeof item.options === 'string') {
+        item.options.split(',').forEach(o => {
+          const trimmed = o.trim();
+          if (trimmed) result.push(trimmed);
+        });
+      }
+      return result;
+    };
+
+    // -------------------------------------------------------------
+    // SERVER-SIDE ATOMIC STOCK VALIDATION LOCK (SQLite WAL Mutex)
+    // -------------------------------------------------------------
+    let parsedItemsForVal = items;
+    if (typeof items === 'string') {
+      try { parsedItemsForVal = JSON.parse(items); } catch(e) { parsedItemsForVal = []; }
+    }
+
+    const latestSettingsForVal = getSettings();
+    const currentStockForVal = latestSettingsForVal.menuStock || {};
+    const stockErrors = [];
+
+    if (Array.isArray(parsedItemsForVal) && parsedItemsForVal.length > 0) {
+      parsedItemsForVal.forEach(item => {
+        if (item.cancelled) return;
+        const key = item.id || item.name;
+        const orderedQty = Number(item.quantity) || 1;
+
+        // 1. Validate Main Item Stock
+        const stockInfo = currentStockForVal[key] || currentStockForVal[item.name];
+        if (stockInfo) {
+          if (stockInfo.status === 'OUT_OF_STOCK') {
+            stockErrors.push(`"${item.name}" telah HABIS STOK.`);
+          } else if (stockInfo.stock_qty !== null && stockInfo.stock_qty !== undefined) {
+            const availQty = Number(stockInfo.stock_qty) || 0;
+            if (availQty <= 0) {
+              stockErrors.push(`"${item.name}" telah HABIS STOK.`);
+            } else if (orderedQty > availQty) {
+              stockErrors.push(`"${item.name}" melebihi baki stok (Diminta: ${orderedQty}, Baki: ${availQty}).`);
+            }
+          }
+        }
+
+        // 2. Validate Option / Add-on Stock
+        const optNames = extractOptionNames(item);
+        optNames.forEach(optName => {
+          const itemKey = item.id || item.name;
+          const optKey1 = `opt::${itemKey}::${optName}`;
+          const optKey2 = `opt::${item.name}::${optName}`;
+          const optKey3 = `opt::${optName}`;
+          const optStock = currentStockForVal[optKey1] || currentStockForVal[optKey2] || currentStockForVal[optKey3];
+
+          if (optStock) {
+            if (optStock.status === 'OUT_OF_STOCK') {
+              stockErrors.push(`Pilihan add-on "${optName}" telah HABIS STOK.`);
+            } else if (optStock.stock_qty !== null && optStock.stock_qty !== undefined) {
+              const availQty = Number(optStock.stock_qty) || 0;
+              if (availQty <= 0) {
+                stockErrors.push(`Pilihan add-on "${optName}" telah HABIS STOK.`);
+              } else if (orderedQty > availQty) {
+                stockErrors.push(`Pilihan add-on "${optName}" melebihi baki stok (Diminta: ${orderedQty}, Baki: ${availQty}).`);
+              }
+            }
+          }
+        });
+      });
+    }
+
+    if (stockErrors.length > 0) {
+      const err = new Error(`Pesanan Ditolak! ${stockErrors.join(' ')}`);
+      err.code = 'STOCK_VALIDATION_FAILED';
+      err.details = stockErrors;
+      throw err;
+    }
+
+    insertOrder.run(
+      order_id,
+      session_id,
+      tableNum,
+      formattedName,
+      formattedOrderType,
+      itemsJson,
+      Number(subtotal || 0),
+      Number(tax || 0),
+      Number(total_amount || 0),
+      special_instruction || '',
+      initialKitchenStatus,
+      assignedWave,
+      queuePos,
+      itemWeight,
+      enteredAt
+    );
+
+    updateTable.run(tableNum);
+    if (formattedName) updateSessionName.run(formattedName, session_id);
+
+    // ---------------------------------------------------------------
+    // AUTOMATIC STOCK DEDUCTION — NON-FATAL on error
+    // If stock deduction fails (e.g. corrupt JSON), the order is still
+    // accepted. Admin must check stock manually.
+    // ---------------------------------------------------------------
+    try {
+      let parsedItems = items;
+      if (typeof items === 'string') {
+        try { parsedItems = JSON.parse(items); } catch(e) { parsedItems = []; }
+      }
+      if (Array.isArray(parsedItems) && parsedItems.length > 0) {
+        const currentStock = settings.menuStock || {};
+        let stockUpdated = false;
+        const newStock = { ...currentStock };
+
+        parsedItems.forEach(item => {
+          if (item.cancelled) return;
+          const key = item.id || item.name;
+          const orderedQty = Number(item.quantity) || 1;
+
+          // Deduct Main Item Stock
+          const stockInfo = newStock[key] || newStock[item.name];
+          if (stockInfo && stockInfo.stock_qty !== null && stockInfo.stock_qty !== undefined) {
+            const remaining = (Number(stockInfo.stock_qty) || 0) - orderedQty;
+            const entry = remaining <= 0
+              ? { status: 'OUT_OF_STOCK', stock_qty: 0 }
+              : { ...stockInfo, status: 'AVAILABLE', stock_qty: remaining };
+            newStock[key] = entry;
+            if (item.name && item.name !== key) newStock[item.name] = entry;
+            stockUpdated = true;
+          }
+
+          // Deduct Option / Add-on Stock
+          const optNames = extractOptionNames(item);
+          optNames.forEach(optName => {
+            const itemKey = item.id || item.name;
+            const optKey1 = `opt::${itemKey}::${optName}`;
+            const optKey2 = `opt::${item.name}::${optName}`;
+            const optKey3 = `opt::${optName}`;
+            const targetKey = newStock[optKey1] ? optKey1 : (newStock[optKey2] ? optKey2 : (newStock[optKey3] ? optKey3 : optKey1));
+            const optStock = newStock[targetKey];
+
+            if (optStock && optStock.stock_qty !== null && optStock.stock_qty !== undefined) {
+              const remaining = (Number(optStock.stock_qty) || 0) - orderedQty;
+              const entry = remaining <= 0
+                ? { status: 'OUT_OF_STOCK', stock_qty: 0 }
+                : { ...optStock, status: 'AVAILABLE', stock_qty: remaining };
+              newStock[optKey1] = entry;
+              newStock[optKey2] = entry;
+              stockUpdated = true;
+            }
+          });
+        });
+
+        if (stockUpdated) {
+          const mergedSettings = { ...settings, menuStock: newStock };
+          db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('receipt_settings', ?)").run(JSON.stringify(mergedSettings));
+        }
+      }
+    } catch (stockErr) {
+      console.error('⚠️  Stock deduction error (non-fatal, order still accepted):', stockErr.message);
+    }
+  });
+
+  transaction();
+  return getSystemState();
+}
+
+/**
+ * Action 3: Update Kitchen Status (PENDING -> COOKING -> READY -> SERVED -> CANCELLED)
+ * Includes Atomic Wave Promotion Trigger when order is SERVED or CANCELLED!
+ */
+function updateKitchenStatus(orderId, newKitchenStatus, cancelReason, cookingStartedAt, items) {
+  const transaction = db.transaction(() => {
+    const itemsJson = items ? (typeof items === 'string' ? items : JSON.stringify(items)) : null;
+
+    if (newKitchenStatus === 'COOKING') {
+      const startTime = cookingStartedAt || Date.now();
+      if (itemsJson) {
+        const stmt = db.prepare('UPDATE orders SET kitchen_status = ?, cooking_started_at = COALESCE(cooking_started_at, ?), items = ? WHERE order_id = ?');
+        stmt.run(newKitchenStatus, startTime, itemsJson, orderId);
+      } else {
+        const stmt = db.prepare('UPDATE orders SET kitchen_status = ?, cooking_started_at = COALESCE(cooking_started_at, ?) WHERE order_id = ?');
+        stmt.run(newKitchenStatus, startTime, orderId);
+      }
+    } else if (newKitchenStatus === 'CANCELLED') {
+      if (itemsJson) {
+        const stmt = db.prepare('UPDATE orders SET kitchen_status = ?, kitchen_cancel_reason = ?, items = ? WHERE order_id = ?');
+        stmt.run(newKitchenStatus, cancelReason || 'Dibatalkan', itemsJson, orderId);
+      } else {
+        const stmt = db.prepare('UPDATE orders SET kitchen_status = ?, kitchen_cancel_reason = ? WHERE order_id = ?');
+        stmt.run(newKitchenStatus, cancelReason || 'Dibatalkan', orderId);
+      }
+    } else {
+      if (itemsJson) {
+        const stmt = db.prepare('UPDATE orders SET kitchen_status = ?, items = ? WHERE order_id = ?');
+        stmt.run(newKitchenStatus, itemsJson, orderId);
+      } else {
+        const stmt = db.prepare('UPDATE orders SET kitchen_status = ? WHERE order_id = ?');
+        stmt.run(newKitchenStatus, orderId);
+      }
+    }
+
+    // ATOMIC TRIGGER: When order is SERVED or CANCELLED, evaluate and promote Wave 2 queue
+    if (newKitchenStatus === 'SERVED' || newKitchenStatus === 'CANCELLED') {
+      checkAndPromoteWaveQueueAtomic();
+    }
+  });
+
+  transaction();
+  return getSystemState();
+}
+
+/**
+ * Action 3b: Update Order Items (Per-station cooking/done item flags)
+ */
+function updateOrderItems(orderId, items, newKitchenStatus) {
+  const transaction = db.transaction(() => {
+    const itemsJson = typeof items === 'string' ? items : JSON.stringify(items || []);
+    if (newKitchenStatus) {
+      const stmt = db.prepare('UPDATE orders SET items = ?, kitchen_status = ? WHERE order_id = ?');
+      stmt.run(itemsJson, newKitchenStatus, orderId);
+    } else {
+      const stmt = db.prepare('UPDATE orders SET items = ? WHERE order_id = ?');
+      stmt.run(itemsJson, orderId);
+    }
+    checkAndPromoteWaveQueueAtomic();
+  });
+
+  transaction();
+  return getSystemState();
+}
+
+/**
+ * Action 4: Close Session & Confirm Payment
+ * Idempotent: if session is already CLOSED, returns current state without error.
+ * PREPAY: transitions PAYMENT_PENDING orders → PENDING (dispatches to KDS).
+ * POSTPAY: sets payment_status = PAID for all session orders.
+ */
+function closeSession(sessionId, tableNumber) {
+  const tableNum = Number(tableNumber);
+
+  // IDEMPOTENCY CHECK: Prevent double-payment processing (e.g. cashier double-click)
+  const sessionRow = db.prepare('SELECT status FROM sessions WHERE session_id = ?').get(sessionId);
+  if (!sessionRow) {
+    console.warn(`⚠️  closeSession: Session ${sessionId} not found — returning current state.`);
+    return getSystemState();
+  }
+  if (sessionRow.status === 'CLOSED') {
+    console.log(`ℹ️  closeSession: Session ${sessionId} already CLOSED — idempotent return.`);
+    return getSystemState();
+  }
+
+  const transaction = db.transaction(() => {
+    db.prepare(`
+      UPDATE sessions SET status = 'CLOSED', closed_at = CURRENT_TIMESTAMP WHERE session_id = ?
+    `).run(sessionId);
+
+    // PREPAY: PAYMENT_PENDING → PENDING releases orders to KDS
+    // POSTPAY: payment_status = PAID marks all orders as paid
+    db.prepare(`
+      UPDATE orders
+      SET payment_status = 'PAID',
+          kitchen_status = CASE WHEN kitchen_status = 'PAYMENT_PENDING' THEN 'PENDING' ELSE kitchen_status END
+      WHERE session_id = ?
+    `).run(sessionId);
+
+    db.prepare(`
+      UPDATE tables SET status = 'KOSONG', current_session_id = NULL WHERE table_number = ?
+    `).run(tableNum);
+
+    // Clean up push notification token for closed session
+    try {
+      db.prepare(`DELETE FROM push_subscriptions WHERE session_id = ? OR table_number = ?`).run(sessionId, tableNum);
+      console.log(`🧹 Push notification token cleared cleanly for Session ${sessionId} (Table ${tableNum})`);
+    } catch(e) {}
+
+    // Wave re-evaluation: newly promoted PENDING orders can now enter wave queue
+    checkAndPromoteWaveQueueAtomic();
+  });
+
+  transaction();
+  return getSystemState();
+}
+
+/**
+ * Action 5: Cancel / Void Session from Counter
+ */
+function cancelSession(sessionId, tableNumber, reason) {
+  const tableNum = Number(tableNumber);
+  const cancelReason = reason || 'Sesi dibatalkan oleh kaunter';
+
+  const updateSession = db.prepare(`
+    UPDATE sessions
+    SET status = 'CLOSED', is_cancelled = 1, closed_at = CURRENT_TIMESTAMP
+    WHERE session_id = ?
+  `);
+
+  const cancelOrders = db.prepare(`
+    UPDATE orders
+    SET kitchen_status = 'CANCELLED', kitchen_cancel_reason = ?
+    WHERE session_id = ? AND kitchen_status != 'SERVED'
+  `);
+
+  const resetTable = db.prepare(`
+    UPDATE tables
+    SET status = 'KOSONG', current_session_id = NULL
+    WHERE table_number = ?
+  `);
+
+  const transaction = db.transaction(() => {
+    updateSession.run(sessionId);
+    cancelOrders.run(cancelReason, sessionId);
+    resetTable.run(tableNum);
+    try {
+      db.prepare(`DELETE FROM push_subscriptions WHERE session_id = ? OR table_number = ?`).run(sessionId, tableNum);
+    } catch(e) {}
+    checkAndPromoteWaveQueueAtomic();
+  });
+
+  transaction();
+  return getSystemState();
+}
+
+/**
+ * Action 6: Reset All System Data
+ */
+function resetAllData() {
+  const transaction = db.transaction(() => {
+    db.prepare('DELETE FROM orders').run();
+    db.prepare('DELETE FROM sessions').run();
+    db.prepare('DELETE FROM push_subscriptions').run();
+    db.prepare("UPDATE tables SET status = 'KOSONG', current_session_id = NULL").run();
+  });
+
+  transaction();
+  console.log('🧹 System database completely reset: All tables cleared to KOSONG.');
+  return getSystemState();
+}
+
+
+
+/**
+ * Action 7: Customer Feedbacks Persistence (With Idempotency, Flexible Parsing & 300-char Limit)
+ */
+function insertCustomerFeedback(fb) {
+  if (!fb) fb = {};
+
+  const cleanOrderId = String(fb.order_id || fb.orderId || 'N/A').trim().slice(0, 40);
+  const cleanName = String(fb.customer_name || fb.customerName || 'Pelanggan').trim().slice(0, 50);
+  const cleanComment = String(fb.comment || '').trim().slice(0, 300);
+
+  // Flexible Rating Mapping: Accepts 'GOOD', 'BAD', 'good', 'bad', 5, 1, etc.
+  let cleanRating = 'GOOD';
+  const rawRating = String(fb.rating || '').toUpperCase().trim();
+  if (['BAD', 'POOR', '1', '2', 'DISLIKE', 'KURANG'].includes(rawRating)) {
+    cleanRating = 'BAD';
+  } else {
+    cleanRating = 'GOOD';
+  }
+
+  const cleanTableNum = (fb.table_number && !isNaN(Number(fb.table_number)))
+    ? Number(fb.table_number)
+    : (fb.tableNumber && !isNaN(Number(fb.tableNumber)))
+    ? Number(fb.tableNumber)
+    : null;
+
+  // IDEMPOTENCY CHECK: 1 order_id can only submit feedback ONCE
+  if (cleanOrderId && cleanOrderId !== 'N/A') {
+    try {
+      const existing = db.prepare(`SELECT * FROM customer_feedbacks WHERE order_id = ?`).get(cleanOrderId);
+      if (existing) {
+        return {
+          duplicate: true,
+          message: 'Maklum balas untuk pesanan ini telah pun dihantar.',
+          feedback_id: existing.feedback_id,
+          order_id: existing.order_id,
+          table_number: existing.table_number,
+          customer_name: existing.customer_name,
+          rating: existing.rating,
+          commented_items: (() => {
+            try { return JSON.parse(existing.commented_items); } catch(e) { return []; }
+          })(),
+          comment: existing.comment,
+          created_at: existing.created_at
+        };
+      }
+    } catch (e) {
+      console.warn('Error checking existing feedback:', e);
+    }
+  }
+
+  const stmt = db.prepare(`
+    INSERT INTO customer_feedbacks (feedback_id, order_id, table_number, customer_name, rating, commented_items, comment, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const feedbackId = fb.feedback_id || fb.feedbackId || `FB-${Date.now()}`;
+  const rawItems = fb.commented_items || fb.commentedItems || [];
+  const commentedItemsJson = typeof rawItems === 'string' 
+    ? rawItems 
+    : JSON.stringify(Array.isArray(rawItems) ? rawItems.slice(0, 20) : []);
+  const createdAt = fb.created_at || fb.createdAt || new Date().toISOString();
+
+  stmt.run(
+    feedbackId,
+    cleanOrderId,
+    cleanTableNum,
+    cleanName,
+    cleanRating,
+    commentedItemsJson,
+    cleanComment,
+    createdAt
+  );
+
+  return {
+    feedback_id: feedbackId,
+    order_id: cleanOrderId,
+    table_number: cleanTableNum,
+    customer_name: cleanName,
+    rating: cleanRating,
+    commented_items: Array.isArray(rawItems) ? rawItems : [],
+    comment: cleanComment,
+    created_at: createdAt
+  };
+}
+
+function getAllCustomerFeedbacks(limit = 50) {
+  try {
+    const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
+    const rows = db.prepare(`SELECT * FROM customer_feedbacks ORDER BY id DESC LIMIT ?`).all(safeLimit);
+    return rows.map(r => ({
+      ...r,
+      commented_items: (() => {
+        try { return JSON.parse(r.commented_items); } catch(e) { return []; }
+      })()
+    }));
+  } catch (e) {
+    console.warn('Error fetching feedbacks:', e);
+    return [];
+  }
+}
+
+module.exports = {
+  db,
+  getSystemState,
+  getSettings,
+  updateSettings,
+  createSession,
+  submitOrder,
+  updateKitchenStatus,
+  updateOrderItems,
+  closeSession,
+  cancelSession,
+  resetAllData,
+  insertCustomerFeedback,
+  getAllCustomerFeedbacks
+};

@@ -1,0 +1,68 @@
+1:import React, { useState, useMemo, useEffect, useRef } from 'react';
+2:import { useSearchParams } from 'react-router-dom';
+3:import { useOrder } from '../context/OrderContext';
+4:import { useAuth } from '../context/AuthContext';
+13:  Sparkles, ShieldAlert, User, ArrowRight, Flame, Heart, Info,
+132:  const [rating, setRating] = useState(null); // 'GOOD' | 'BAD' | null
+133:  const [selectedItems, setSelectedItems] = useState([]);
+134:  const [commentText, setCommentText] = useState('');
+135:  const [isSubmitted, setIsSubmitted] = useState(false);
+136:  const [isSubmitting, setIsSubmitting] = useState(false);
+137:  const [submissionError, setSubmissionError] = useState(null);
+140:  const feedbackSectionRef = useRef(null);
+155:  useEffect(() => {
+418:  const [searchParams] = useSearchParams();
+425:  const { menuItems, menuStock, tables, sessions, orders, submitOrder, receiptSettings, submitCustomerFeedback } = useOrder();
+459:  useEffect(() => {
+471:  const [themeMode, setThemeMode] = useState(() => {
+476:  const [customerTemplate, setCustomerTemplate] = useState(() => {
+480:  useEffect(() => {
+488:  const [customerMenuViewMode, setCustomerMenuViewMode] = useState(() => {
+492:  useEffect(() => {
+499:  const [currentBookPage, setCurrentBookPage] = useState(0);
+500:  const [paperFlipAnimClass, setPaperFlipAnimClass] = useState('');
+501:  const bookSliderRef = useRef(null);
+582:  const [activeCategory, setActiveCategory] = useState('Semua');
+583:  const [searchQuery, setSearchQuery] = useState('');
+586:  const [cart, setCart] = useState([]);
+587:  const [isCartOpen, setIsCartOpen] = useState(false);
+588:  const [overallNote, setOverallNote] = useState('');
+589:  const [orderType, setOrderType] = useState(null); // null (unselected) | DINE_IN | TAKEAWAY
+590:  const [isSubmitting, setIsSubmitting] = useState(false);
+593:  const [selectedItemForModal, setSelectedItemForModal] = useState(null);
+594:  const [modalOptions, setModalOptions] = useState({});
+595:  const [modalItemNote, setModalItemNote] = useState('');
+596:  const [modalQty, setModalQty] = useState(1);
+597:  const [modalScrolledToBottom, setModalScrolledToBottom] = useState(true);
+598:  const modalScrollRef = useRef(null);
+601:  const [brokenImageIds, setBrokenImageIds] = useState(() => new Set());
+604:  const [modalImageLoaded, setModalImageLoaded] = useState(false);
+607:  const [customerName, setCustomerName] = useState('');
+608:  const [nameInputValue, setNameInputValue] = useState('');
+609:  const [nameSubmitted, setNameSubmitted] = useState(false);
+612:  const [viewState, setViewState] = useState(null);
+614:  const { tenant } = useAuth();
+615:  const [isQuotaExceededModalOpen, setIsQuotaExceededModalOpen] = useState(false);
+616:  const [quotaCountdown, setQuotaCountdown] = useState('');
+619:  useEffect(() => {
+632:  useEffect(() => {
+649:  useEffect(() => {
+672:  const cleanSessionParam = useMemo(() => {
+679:  const currentSession = useMemo(() => {
+689:  const currentTable = useMemo(() => {
+695:  const sessionOrders = useMemo(() => {
+706:  const seenCancelledOrdersRef = useRef(new Set());
+709:  useEffect(() => {
+730:  // Unlock AudioContext on first user interaction
+731:  useEffect(() => {
+732:    const handleUserGesture = () => unlockAudioContext();
+733:    window.addEventListener('click', handleUserGesture, { once: true });
+734:    window.addEventListener('touchstart', handleUserGesture, { once: true });
+736:      window.removeEventListener('click', handleUserGesture);
+737:      window.removeEventListener('touchstart', handleUserGesture);
+779:  const categoryConfig = useMemo(() => {
+796:  const filteredMenuItems = useMemo(() => {
+999:  const recommendedItemIds = useMemo(() => {
+1102:      const usedOrders = getCycleOrdersCount(orders, tenant?.id, cycleStart);
+1104:      if (usedOrders >= FREE_PLAN_LIMIT) {
+1412:                  <User className="w-4 h-4 text-rose-500" />
