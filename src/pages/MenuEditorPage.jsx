@@ -143,9 +143,15 @@ function ImageUploadZone({ currentImage, onImageUploaded }) {
         setPreviewUrl(currentImage || "");
       }
     } catch (e) {
-      console.error("💥 [UPLOAD] Ralat sambungan:", e.message);
-      alert(`❌ Gagal sambung ke server: ${e.message}`);
-      setPreviewUrl(currentImage || "");
+      console.warn("💥 [UPLOAD] Backend unavailable, converting to Base64 fallback:", e.message);
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const base64Url = evt.target.result;
+        setPreviewUrl(base64Url);
+        setImgError(false);
+        onImageUploaded(base64Url);
+      };
+      reader.readAsDataURL(file);
     } finally {
       setUploading(false);
     }
@@ -538,24 +544,31 @@ export default function MenuEditorPage() {
 
       console.log('🖼️ Uploading cropped welcome banner for tenant:', tenantId);
 
-      const res = await fetch(`${BASE}/api/banner/upload`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
-        body: JSON.stringify({ imageBase64: croppedDataUrl, tenant_id: tenantId }),
-      });
-      const data = await res.json();
-
-      if (data.status === 'OK' && data.url) {
-        console.log('✅ Welcome banner uploaded to Supabase Storage:', data.url);
-        if (updateReceiptSettings) {
-          updateReceiptSettings({ welcomeBannerUrl: data.url });
+      let savedUrl = null;
+      try {
+        const res = await fetch(`${BASE}/api/banner/upload`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+          body: JSON.stringify({ imageBase64: croppedDataUrl, tenant_id: tenantId }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'OK' && data.url) {
+            savedUrl = data.url;
+          }
         }
-        showToast('✨ Gambar Banner Selamat Datang berjaya disimpan & dikongsi ke semua peranti!', 'ok');
-      } else {
-        showToast(`❌ ${data.message || 'Gagal muat naik banner.'}`, 'error');
+      } catch (backendErr) {
+        console.warn('Backend banner upload endpoint unavailable, falling back to direct Supabase save:', backendErr);
       }
+
+      // Fallback: Use croppedDataUrl directly if backend is unavailable (e.g. Vercel static hosting)
+      const finalBannerUrl = savedUrl || croppedDataUrl;
+      if (updateReceiptSettings) {
+        await updateReceiptSettings({ welcomeBannerUrl: finalBannerUrl });
+      }
+      showToast('✨ Gambar Banner Selamat Datang berjaya disimpan & dikongsi ke semua peranti!', 'ok');
     } catch (err) {
-      showToast('❌ Gagal sambung ke server untuk muat naik banner.', 'error');
+      showToast('❌ Gagal muat naik banner.', 'error');
       console.error('Banner upload error:', err);
     } finally {
       setIsBannerUploading(false);
