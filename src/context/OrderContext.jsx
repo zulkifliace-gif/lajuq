@@ -55,6 +55,16 @@ const DEFAULT_RECEIPT_SETTINGS = {
 
 export function OrderProvider({ children }) {
   const { user, tenant } = useAuth();
+  
+  // Extract tenant ID from URL for customer QR scans (tid or tenant_id)
+  if (typeof window !== 'undefined') {
+    const searchParams = new URLSearchParams(window.location.search);
+    const urlTid = searchParams.get('tid') || searchParams.get('tenant_id');
+    if (urlTid) {
+      localStorage.setItem('fb_tenant_id', urlTid);
+    }
+  }
+
   const tenantRef = useRef(tenant);
   const userRef = useRef(user);
 

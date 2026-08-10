@@ -25,7 +25,8 @@ export default function QRModal({ isOpen, onClose, tableNumber, sessionId }) {
 
   // Ultra-Short URL format for GOOJPRT 58mm printer compatibility (/o?t=X&s=YZ)
   const shortSessionId = sessionId.replace(/^SES-/, '');
-  const orderUrl = `${window.location.origin}/o?t=${tableNumber}&s=${shortSessionId}`;
+  const tid = localStorage.getItem('fb_tenant_id') || '';
+  const orderUrl = `${window.location.origin}/o?t=${tableNumber}&s=${shortSessionId}${tid ? '&tid=' + tid : ''}`;
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(orderUrl);

@@ -450,7 +450,8 @@ export async function printQRSlipBluetooth(printerConnection, data, settings = {
 
   const baseUrl = orderUrl ? orderUrl.split('/order')[0].split('/o')[0] : window.location.origin;
   const cleanSessionId = sessionId.replace(/^SES-/, '');
-  const shortUrl = `${baseUrl}/o?t=${tableNumber}&s=${cleanSessionId}`;
+  const tid = localStorage.getItem('fb_tenant_id') || '';
+  const shortUrl = `${baseUrl}/o?t=${tableNumber}&s=${cleanSessionId}${tid ? '&tid=' + tid : ''}`;
 
   const logoWidthPx = paperWidth === '80mm' ? 384 : paperWidth === '72mm' ? 336 : 256;
 
