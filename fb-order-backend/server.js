@@ -762,7 +762,10 @@ app.post('/api/order/:orderId/feedback', handlePublicFeedbackSubmission);
 // GET CUSTOMER FEEDBACKS DIRECTLY FROM CLOUD SUPABASE
 app.get('/api/feedbacks', async (req, res) => {
   try {
-    const tenantId = req.query.tenant_id || req.headers['x-tenant-id'] || 'f75e8dfd-67cd-475f-b88c-2f1ba391e1bc';
+    let tenantId = req.query.tenant_id || req.headers['x-tenant-id'];
+    if (!tenantId || tenantId === 'null' || tenantId === 'undefined') {
+      tenantId = 'f75e8dfd-67cd-475f-b88c-2f1ba391e1bc';
+    }
     const { data, error } = await supabaseAdmin
       .from('customer_feedbacks')
       .select('*')

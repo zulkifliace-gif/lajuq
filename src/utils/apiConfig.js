@@ -8,17 +8,18 @@
 export const getBackendBaseUrl = () => {
   // 1. Utamakan Environment Variable jika diset di Vercel atau .env.local
   if (import.meta.env.VITE_BACKEND_URL) {
-    return import.meta.env.VITE_BACKEND_URL.replace(/\/+$/, ''); // Buang trailing slash jika ada
+    return import.meta.env.VITE_BACKEND_URL.replace(/\/+$/, '');
   }
 
-  // 2. Fallback kepada logik asal
+  // 2. Semak persekitaran semasa (localhost vs Production VPS)
   const hostname = window.location.hostname;
   const port = window.location.port;
   
-  // Jika akses dari PC sendiri atau Local Network
+  // Jika akses dari PC sendiri atau Local Network (Localhost / 192.168.x.x)
   const isLocalDev = port && port !== '5000' && (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.startsWith('10.'));
   
-  return isLocalDev ? `http://${hostname}:5000` : window.location.origin;
+  // Jika pembangunan tempatan, guna port 5000. Jika produksi (Vercel/Domain luar), SENTIASA guna VPS https://api.lajuq.my
+  return isLocalDev ? `http://${hostname}:5000` : 'https://api.lajuq.my';
 };
 
 /**
