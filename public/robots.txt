@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Allow: /customer-landing
+Allow: /terms
+
+Disallow: /staff
+Disallow: /counter
+Disallow: /kitchen
+Disallow: /menu-editor
+
+Sitemap: https://www.lajuq.my/sitemap.xml
