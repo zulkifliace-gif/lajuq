@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useOrder } from '../context/OrderContext';
 import { Headphones, X, Send, Loader2, CheckCircle2, AlertCircle, Phone, FileText, Image, Tag, Building2 } from 'lucide-react';
+import { getBackendBaseUrl } from '../utils/apiConfig';
 
 const TELEGRAM_BOT_TOKEN = '8676460374:AAG08d_gieND5UfawUVIylwY7MaEoNMGdCA';
 const TELEGRAM_CHANNEL_ID = '-1004438116944';
@@ -82,10 +83,7 @@ ${escapeHtml(description)}
 `.trim();
 
     try {
-      const port = window.location.port;
-      const isLocalDev = port === '3000' || port === '5173';
-      const BASE = isLocalDev ? `http://${window.location.hostname}:5000` : window.location.origin;
-
+      const BASE = getBackendBaseUrl();
       let sentSuccess = false;
 
       // 1. Try Backend Proxy Route with 8s timeout

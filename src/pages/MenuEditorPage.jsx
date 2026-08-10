@@ -10,6 +10,7 @@ import {
 import ImageCropperModal from "../components/ImageCropperModal";
 import SubscriptionModal from "../components/SubscriptionModal";
 import { supabase } from "../lib/supabaseClient";
+import { getBackendBaseUrl } from '../utils/apiConfig';
 
 const DEFAULT_CATEGORIES = [];
 
@@ -35,37 +36,16 @@ function Toast({ msg, type, onClose }) {
   );
 }
 
-function resolveImageUrl(url) {
-  if (!url || typeof url !== 'string') return '';
-  let trimmed = url.trim();
-  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return '';
-
-  // Fail blob tempatan atau base64 — kekalkan seperti biasa
-  if (trimmed.startsWith('data:image/') || trimmed.startsWith('blob:')) return trimmed;
-
-  // Sebarang URL yang mengandungi /uploads/ → ekstrak bahagian /uploads/ dan gabungkan dengan HOST & PORT 5000 jika tempatan
-  if (trimmed.includes('/uploads/')) {
-    const uploadPath = trimmed.substring(trimmed.indexOf('/uploads/'));
-    const hostname = window.location.hostname;
-    const port = window.location.port;
-
-    // Jika di persekitaran pembangunan tempatan / LAN WiFi (port bukan 5000):
-    // Sambung terus ke Express Backend port 5000!
-    if (port && port !== '5000' && (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.startsWith('10.'))) {
-      return `http://${hostname}:5000${uploadPath}`;
-    }
-    return `${window.location.origin}${uploadPath}`;
+// resolveImageUrl: Memastikan URL gambar yang menggunakan path relatif (/uploads/...) dihala ke backend yang betul.
+function resolveImageUrl(uploadPath) {
+  if (!uploadPath) return null;
+  if (uploadPath.startsWith('http://') || uploadPath.startsWith('https://') || uploadPath.startsWith('data:')) {
+    return uploadPath; // Sudah pun URL mutlak atau Base64
   }
-
-  // URL yang ada localhost atau 127.0.0.1 -> ganti dengan IP/hostname semasa
-  if (trimmed.includes('localhost:') || trimmed.includes('127.0.0.1:')) {
-    const currentHost = window.location.hostname;
-    trimmed = trimmed
-      .replace(/localhost/g, currentHost)
-      .replace(/127\.0\.0\.1/g, currentHost);
+  if (uploadPath.startsWith('/uploads/')) {
+    return `${getBackendBaseUrl()}${uploadPath}`;
   }
-
-  return trimmed;
+  return uploadPath;
 }
 
 function ImageUploadZone({ currentImage, onImageUploaded }) {
@@ -88,9 +68,7 @@ function ImageUploadZone({ currentImage, onImageUploaded }) {
   };
 
   const getBaseUrl = () => {
-    const port = window.location.port;
-    const isLocalDev = port === "3000" || port === "5173";
-    return isLocalDev ? `http://${window.location.hostname}:5000` : window.location.origin;
+    return getBackendBaseUrl();
   };
 
   const handleUpload = async (file) => {
@@ -536,11 +514,7 @@ export default function MenuEditorPage() {
 
     try {
       const tenantId = tenant?.id || localStorage.getItem('fb_tenant_id') || 'demo-tenant';
-      const port = window.location.port;
-      const isLocalDev = port === '3000' || port === '5173';
-      const BASE = isLocalDev
-        ? `http://${window.location.hostname}:5000`
-        : window.location.origin;
+      const BASE = getBackendBaseUrl();
 
       console.log('🖼️ Uploading cropped welcome banner for tenant:', tenantId);
 
@@ -584,9 +558,7 @@ export default function MenuEditorPage() {
     try {
       const tenantId = tenant?.id;
       if (tenantId) {
-        const port = window.location.port;
-        const isLocalDev = port === '3000' || port === '5173';
-        const BASE = isLocalDev ? `http://${window.location.hostname}:5000` : window.location.origin;
+        const BASE = getBackendBaseUrl();
         await fetch(`${BASE}/api/banner/reset`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },

@@ -4,6 +4,7 @@ import { connectBluetoothPrinter, printKitchenRunnerTicketBluetooth, isDrinkItem
 import { getSubscriptionCycleInfo, getCycleOrdersCount, isFreePlan, FREE_PLAN_LIMIT } from '../utils/subscriptionQuota';
 import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabaseClient';
+import { getBackendBaseUrl } from '../utils/apiConfig';
 
 // Create Context
 const OrderContext = createContext();
@@ -100,9 +101,7 @@ export function OrderProvider({ children }) {
     if (fetchingFeedbacksRef.current) return; // Sudah dalam proses fetch
     fetchingFeedbacksRef.current = true;
     const activeTenantId = tenantId || localStorage.getItem('fb_tenant_id');
-    const port = window.location.port;
-    const isLocalDev = port === '3000' || port === '5173';
-    const BASE = isLocalDev ? `http://${window.location.hostname}:5000` : window.location.origin;
+    const BASE = getBackendBaseUrl();
     try {
       const res = await fetch(`${BASE}/api/feedbacks?tenant_id=${activeTenantId}`);
       const json = await res.json();
@@ -136,9 +135,7 @@ export function OrderProvider({ children }) {
   useEffect(() => {
     const tid = tenant?.id || localStorage.getItem('fb_tenant_id');
     if (!tid) return;
-    const port = window.location.port;
-    const isLocalDev = port === '3000' || port === '5173';
-    const BASE = isLocalDev ? `http://${window.location.hostname}:5000` : window.location.origin;
+    const BASE = getBackendBaseUrl();
     fetch(`${BASE}/api/settings`, {
       headers: { 'x-tenant-id': tid }
     })
@@ -425,13 +422,7 @@ export function OrderProvider({ children }) {
     }
   }, [user]);
 
-  // Helper dinamik untuk dapatkan BASE URL backend Express port 5000
-  const getBackendBaseUrl = useCallback(() => {
-    const hostname = window.location.hostname;
-    const port = window.location.port;
-    const isLocalDev = port && port !== '5000' && (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.startsWith('10.'));
-    return isLocalDev ? `http://${hostname}:5000` : window.location.origin;
-  }, []);
+  // getBackendBaseUrl di-import dari '../utils/apiConfig'
 
   // Update menu and save to Supabase 'menu_items' table via backend (Service Role - bypass RLS)
   const updateMenuItems = useCallback(async (newMenu) => {
@@ -686,11 +677,7 @@ export function OrderProvider({ children }) {
   // Socket is stored in socketRef and NEVER disconnected on re-render
   // to prevent the connect/disconnect spam loop.
   useEffect(() => {
-    const port = window.location.port;
-    const isLocalDev = port === '3000' || port === '5173';
-    const BACKEND_URL = isLocalDev
-      ? `http://${window.location.hostname}:5000`
-      : window.location.origin;
+    const BACKEND_URL = getBackendBaseUrl();
 
     // Only create socket once — never recreate on re-render
     if (!socketRef.current) {
@@ -1476,9 +1463,7 @@ export function OrderProvider({ children }) {
           const _tid = tenantRef.current?.id || localStorage.getItem('fb_tenant_id');
           socketRef.current.emit('UPDATE_SETTINGS', { ...mergedSettings, tenant_id: _tid });
         }
-        const port = window.location.port;
-        const isLocalDev = port === '3000' || port === '5173';
-        const BASE = isLocalDev ? `http://${window.location.hostname}:5000` : window.location.origin;
+        const BASE = getBackendBaseUrl();
         try {
           fetch(`${BASE}/api/settings`, {
             method: 'POST',
@@ -1598,9 +1583,7 @@ export function OrderProvider({ children }) {
           const _tid = tenantRef.current?.id || localStorage.getItem('fb_tenant_id');
           socketRef.current.emit('UPDATE_SETTINGS', { ...mergedSettings, tenant_id: _tid });
         }
-        const port = window.location.port;
-        const isLocalDev = port === '3000' || port === '5173';
-        const BASE = isLocalDev ? `http://${window.location.hostname}:5000` : window.location.origin;
+        const BASE = getBackendBaseUrl();
         try {
           fetch(`${BASE}/api/settings`, {
             method: 'POST',
@@ -1887,9 +1870,7 @@ export function OrderProvider({ children }) {
     } catch (e) {}
 
     // 2. Also send to REST API /api/feedback
-    const port = window.location.port;
-    const isLocalDev = port === '3000' || port === '5173';
-    const BACKEND_URL = isLocalDev ? `http://${window.location.hostname}:5000` : window.location.origin;
+    const BACKEND_URL = getBackendBaseUrl();
     const targetEndpointUrl = `${BACKEND_URL}/api/feedback`;
 
     try {
@@ -1929,9 +1910,7 @@ export function OrderProvider({ children }) {
           const _tid = tenantRef.current?.id || localStorage.getItem('fb_tenant_id');
           socketRef.current.emit('UPDATE_SETTINGS', { ...merged, tenant_id: _tid });
         }
-        const port = window.location.port;
-        const isLocalDev = port === '3000' || port === '5173';
-        const BASE = isLocalDev ? `http://${window.location.hostname}:5000` : window.location.origin;
+        const BASE = getBackendBaseUrl();
         try {
           await fetch(`${BASE}/api/settings`, {
             method: 'POST',

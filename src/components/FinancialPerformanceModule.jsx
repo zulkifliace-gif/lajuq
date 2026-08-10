@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useOrder } from '../context/OrderContext';
 import ModuleErrorBoundary from './ModuleErrorBoundary';
+import { getBackendBaseUrl } from '../utils/apiConfig';
 import { 
   DollarSign, TrendingUp, ShoppingBag, Award, AlertCircle, ChevronRight, ChevronLeft, ChevronDown,
   FileSpreadsheet, Printer, Calendar, Search, Filter, PieChart, ArrowUpRight, ArrowDownRight,
@@ -133,9 +134,7 @@ export default function FinancialPerformanceModule() {
     setTelegramStatusMsg(null);
 
     try {
-      const port = window.location.port;
-      const isLocalDev = port === '3000' || port === '5173';
-      const BACKEND_URL = isLocalDev ? `http://${window.location.hostname}:5000` : window.location.origin;
+      const BACKEND_URL = getBackendBaseUrl();
 
       const res = await fetch(`${BACKEND_URL}/api/telegram/test`, {
         method: 'POST',
