@@ -10,7 +10,7 @@ import {
 import ImageCropperModal from "../components/ImageCropperModal";
 import SubscriptionModal from "../components/SubscriptionModal";
 import { supabase } from "../lib/supabaseClient";
-import { getBackendBaseUrl } from '../utils/apiConfig';
+import { getBackendBaseUrl, resolveImageUrl } from '../utils/apiConfig';
 
 const DEFAULT_CATEGORIES = [];
 
@@ -36,17 +36,7 @@ function Toast({ msg, type, onClose }) {
   );
 }
 
-// resolveImageUrl: Memastikan URL gambar yang menggunakan path relatif (/uploads/...) dihala ke backend yang betul.
-function resolveImageUrl(uploadPath) {
-  if (!uploadPath) return null;
-  if (uploadPath.startsWith('http://') || uploadPath.startsWith('https://') || uploadPath.startsWith('data:')) {
-    return uploadPath; // Sudah pun URL mutlak atau Base64
-  }
-  if (uploadPath.startsWith('/uploads/')) {
-    return `${getBackendBaseUrl()}${uploadPath}`;
-  }
-  return uploadPath;
-}
+// resolveImageUrl di-import dari '../utils/apiConfig'
 
 function ImageUploadZone({ currentImage, onImageUploaded }) {
   const [dragging, setDragging] = useState(false);

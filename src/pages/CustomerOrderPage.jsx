@@ -16,6 +16,7 @@ import {
 
 import { calculateReceiptTotals } from '../utils/receiptCalculator';
 import ModuleErrorBoundary from '../components/ModuleErrorBoundary';
+import { resolveImageUrl } from '../utils/apiConfig';
 
 // Safe helper to parse items array
 function getSafeItems(items) {
@@ -27,39 +28,7 @@ function getSafeItems(items) {
   return [];
 }
 
-// Dynamic URL resolver — pastikan gambar dari VPS boleh dipapar di semua peranti
-function resolveImageUrl(url) {
-  if (!url || typeof url !== 'string') return '';
-  let trimmed = url.trim();
-  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return '';
-
-  // Fail blob tempatan atau base64 — kekalkan seperti biasa
-  if (trimmed.startsWith('data:image/') || trimmed.startsWith('blob:')) return trimmed;
-
-  // Sebarang URL yang mengandungi /uploads/ → ekstrak bahagian /uploads/ dan gabungkan dengan HOST & PORT 5000 jika tempatan
-  if (trimmed.includes('/uploads/')) {
-    const uploadPath = trimmed.substring(trimmed.indexOf('/uploads/'));
-    const hostname = window.location.hostname;
-    const port = window.location.port;
-
-    // Jika di persekitaran pembangunan tempatan / LAN WiFi (port bukan 5000):
-    // Sambung terus ke Express Backend port 5000!
-    if (port && port !== '5000' && (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.startsWith('10.'))) {
-      return `http://${hostname}:5000${uploadPath}`;
-    }
-    return `${window.location.origin}${uploadPath}`;
-  }
-
-  // URL yang ada localhost atau 127.0.0.1 -> ganti dengan IP/hostname semasa
-  if (trimmed.includes('localhost:') || trimmed.includes('127.0.0.1:')) {
-    const currentHost = window.location.hostname;
-    trimmed = trimmed
-      .replace(/localhost/g, currentHost)
-      .replace(/127\.0\.0\.1/g, currentHost);
-  }
-
-  return trimmed;
-}
+// resolveImageUrl di-import dari '../utils/apiConfig'
 
 // Helper to strictly validate if a menu image URL is valid and non-empty
 function hasValidImage(url) {

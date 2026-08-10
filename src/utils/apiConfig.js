@@ -18,6 +18,33 @@ export const getBackendBaseUrl = () => {
   // Jika akses dari PC sendiri atau Local Network
   const isLocalDev = port && port !== '5000' && (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.startsWith('10.'));
   
-  // Jika isLocalDev, sambung ke port 5000. Jika tidak, guna domain semasa (ini yang menjadi isu Vercel sebelum ini)
   return isLocalDev ? `http://${hostname}:5000` : window.location.origin;
 };
+
+/**
+ * Menghalakan mana-mana path gambar (/uploads/...) ke URL Backend VPS yang betul
+ * serta menaik taraf HTTP kepada HTTPS untuk mengelak ralat Mixed Content di Vercel.
+ */
+export const resolveImageUrl = (url) => {
+  if (!url || typeof url !== 'string') return '';
+  let trimmed = url.trim();
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return '';
+
+  // Fail base64 atau blob kekal seperti biasa
+  if (trimmed.startsWith('data:image/') || trimmed.startsWith('blob:')) return trimmed;
+
+  // Jika terdapat path /uploads/, gabungkan terus dengan getBackendBaseUrl()
+  if (trimmed.includes('/uploads/')) {
+    const uploadPath = trimmed.substring(trimmed.indexOf('/uploads/'));
+    const baseUrl = getBackendBaseUrl();
+    return `${baseUrl}${uploadPath}`;
+  }
+
+  // Tukar http:// ke https:// jika menggunakan domain luar (bukan localhost/LAN IP)
+  if (trimmed.startsWith('http://') && !trimmed.includes('localhost') && !trimmed.includes('127.0.0.1') && !trimmed.includes('192.168.') && !trimmed.includes('10.')) {
+    return trimmed.replace(/^http:\/\//i, 'https://');
+  }
+
+  return trimmed;
+};
+
