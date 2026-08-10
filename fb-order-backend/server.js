@@ -304,7 +304,7 @@ app.post('/api/reset', async (req, res) => {
       supabaseAdmin.from('tables').update({ status: 'KOSONG', current_session_id: null }).eq('tenant_id', tenantId)
     ]);
     const state = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', state);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', state); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', state);
     res.json({ status: 'OK', message: 'All system data reset successfully (Supabase)', data: state });
   } catch (error) {
     res.status(500).json({ status: 'ERROR', message: error.message });
@@ -428,7 +428,7 @@ app.post('/api/settings', async (req, res) => {
     if (newSettings?.emergencyMode) staffNamespace.to(tenantId).emit('EMERGENCY_MODE_TOGGLED', newSettings.emergencyMode);
 
     const updatedState = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
 
     res.json({ status: 'OK', message: 'Tetapan disimpan ke Supabase Cloud!', data: updatedSettings });
   } catch (error) {
@@ -1032,7 +1032,7 @@ staffNamespace.on('connection', (socket) => {
     if (data && data.error) return callback && callback({ error: data.error });
 
     const updatedState = await getSupabaseSystemState(socket.data.tenantId);
-    staffNamespace.to(socket.data.tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    staffNamespace.to(socket.data.tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(socket.data.tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok', session: data });
   }));
 
@@ -1041,14 +1041,14 @@ staffNamespace.on('connection', (socket) => {
     const { order_id, status } = payload;
     await supabaseAdmin.from('orders').update({ kitchen_status: status }).eq('tenant_id', tenantId).eq('order_id', order_id);
     const updatedState = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok' });
   }));
 
   socket.on('MARK_STATION_DONE', safeHandler(async (payload, callback) => {
     const tenantId = socket.data.tenantId;
     const updatedState = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok' });
   }));
 
@@ -1057,7 +1057,7 @@ staffNamespace.on('connection', (socket) => {
     const { order_id, reason } = payload;
     await supabaseAdmin.from('orders').update({ kitchen_status: 'CANCELLED', kitchen_cancel_reason: reason }).eq('tenant_id', tenantId).eq('order_id', order_id);
     const updatedState = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok' });
   }));
 
@@ -1066,7 +1066,7 @@ staffNamespace.on('connection', (socket) => {
     const { session_id } = payload;
     await supabaseAdmin.from('sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
     const updatedState = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok' });
   }));
 
@@ -1075,7 +1075,7 @@ staffNamespace.on('connection', (socket) => {
     const { session_id, reason } = payload;
     await supabaseAdmin.from('sessions').update({ status: 'CLOSED', is_cancelled: true, closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
     const updatedState = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     staffNamespace.to(tenantId).emit('SESSION_HAS_BEEN_CANCELLED', { session_id, reason: reason || 'Sesi dibatalkan oleh kaunter' });
     if (callback) callback({ status: 'ok' });
   }));
@@ -1084,7 +1084,7 @@ staffNamespace.on('connection', (socket) => {
     const tenantId = socket.data.tenantId;
     // (Implementation similar to /api/reset)
     const updatedState = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok' });
   }));
 
@@ -1104,7 +1104,7 @@ staffNamespace.on('connection', (socket) => {
     }
     const settings = await getSupabaseSettings(tenantId);
     const updatedState = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     staffNamespace.to(tenantId).emit('SETTINGS_UPDATED', settings);
     if (payload?.emergencyMode) staffNamespace.to(tenantId).emit('EMERGENCY_MODE_TOGGLED', payload.emergencyMode);
     if (callback) callback({ status: 'ok' });
@@ -1116,23 +1116,11 @@ staffNamespace.on('connection', (socket) => {
 
 customerNamespace.use(async (socket, next) => {
   try {
-    const { session_id, access_token } = socket.handshake.auth || {};
-    if (!session_id || !access_token) return next(new Error('missing_credentials'));
+    const { session_id, tenant_id } = socket.handshake.auth || {};
+    if (!tenant_id) return next(new Error('missing_tenant_id'));
 
-    const { data: session, error } = await supabaseAdmin
-      .from('table_sessions')
-      .select('id, tenant_id, status, expires_at, stands!inner(access_token, stand_number)')
-      .eq('id', session_id)
-      .eq('status', 'ACTIVE')
-      .single();
-
-    if (error || !session) return next(new Error('session_not_found'));
-    if (session.stands.access_token !== access_token) return next(new Error('invalid_token'));
-    if (new Date(session.expires_at) <= new Date()) return next(new Error('session_expired'));
-
-    socket.data.tenantId = session.tenant_id;
-    socket.data.sessionId = session.id;
-    socket.data.standNumber = session.stands.stand_number;
+    socket.data.tenantId = tenant_id;
+    socket.data.sessionId = session_id || 'GUEST';
     next();
   } catch (err) {
     console.error('[customer auth] error', err);
@@ -1142,6 +1130,14 @@ customerNamespace.use(async (socket, next) => {
 
 customerNamespace.on('connection', (socket) => {
   socket.join(`session:${socket.data.sessionId}`);
+  socket.join(socket.data.tenantId); // Join tenant room to receive global updates
+
+  getSupabaseSystemState(socket.data.tenantId)
+    .then((state) => socket.emit('INIT_STATE', state))
+    .catch((err) => {
+      console.error('[customer INIT_STATE] error', err);
+      socket.emit('INIT_STATE_ERROR', { error: 'load_failed' });
+    });
 
   socket.on('SUBMIT_ORDER', safeHandler(async (payload, callback) => {
     if (!checkRateLimit(socket.id)) {
@@ -1192,7 +1188,7 @@ customerNamespace.on('connection', (socket) => {
     staffNamespace.to(tenantId).emit('NEW_ORDER_RECEIVED', order);
     
     const updatedState = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
 
     if (callback) callback({ status: 'ok', order });
   }));

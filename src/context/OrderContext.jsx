@@ -693,18 +693,18 @@ export function OrderProvider({ children }) {
     if (!socketRef.current) {
       try {
         const urlParams = new URLSearchParams(window.location.search);
-        const isCustomerPath = window.location.pathname.includes('customer') || urlParams.has('session');
+        const isCustomerPath = window.location.pathname.includes('customer') || window.location.pathname.includes('/order') || window.location.pathname === '/o' || urlParams.has('session') || urlParams.has('s');
 
         if (isCustomerPath) {
-          const session_id = urlParams.get('session') || localStorage.getItem('fb_customer_session_id');
-          const access_token = urlParams.get('token') || localStorage.getItem('fb_customer_access_token') || 'dummy_token';
+          const session_id = urlParams.get('session') || urlParams.get('s') || localStorage.getItem('fb_customer_session_id') || 'GUEST';
+          const tenant_id = urlParams.get('tid') || localStorage.getItem('fb_tenant_id');
           
           socketRef.current = io(`${BACKEND_URL}/customer`, {
             transports: ['polling', 'websocket'],
             reconnectionAttempts: 20,
             reconnectionDelay: 2000,
             reconnectionDelayMax: 10000,
-            auth: { session_id, access_token }
+            auth: { session_id, tenant_id }
           });
         } else {
           socketRef.current = io(`${BACKEND_URL}/staff`, {

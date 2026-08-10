@@ -1264,7 +1264,7 @@ export default function CustomerOrderPage() {
             <div className="w-full h-48 sm:h-52 bg-[#E3DBC7] relative overflow-hidden flex items-center justify-center border-b border-black/10">
               {customBanner ? (
                 <img
-                  src={customBanner}
+                  src={resolveImageUrl(customBanner)}
                   alt="Selamat Datang Banner"
                   className="w-full h-full object-cover"
                 />
@@ -1347,7 +1347,7 @@ export default function CustomerOrderPage() {
           <div className="w-full h-48 sm:h-52 bg-slate-900 relative overflow-hidden flex items-center justify-center border-b border-slate-200 dark:border-slate-800">
             {customBanner ? (
               <img
-                src={customBanner}
+                src={resolveImageUrl(customBanner)}
                 alt="Selamat Datang Banner"
                 className="w-full h-full object-cover"
               />
