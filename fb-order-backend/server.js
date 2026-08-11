@@ -1046,23 +1046,28 @@ staffNamespace.use(async (socket, next) => {
     const { data: userData, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !userData?.user) return next(new Error('invalid_token'));
 
-    const { data: staff, error: staffErr } = await supabaseAdmin
-      .from('staff_profiles')
-      .select('tenant_id, role')
-      .eq('id', userData.user.id)
+    // Cari tenant berdasarkan owner_id (jadual staff_profiles tidak wujud — guna tenants.owner_id)
+    const { data: tenant, error: tenantErr } = await supabaseAdmin
+      .from('tenants')
+      .select('id, name, slug')
+      .eq('owner_id', userData.user.id)
       .single();
 
-    if (staffErr || !staff) return next(new Error('not_staff'));
+    if (tenantErr || !tenant) {
+      console.error('[staff auth] user not owner of any tenant:', userData.user.id, tenantErr?.message);
+      return next(new Error('not_staff'));
+    }
 
     socket.data.userId = userData.user.id;
-    socket.data.tenantId = staff.tenant_id;
-    socket.data.role = staff.role;
+    socket.data.tenantId = tenant.id;
+    socket.data.role = 'owner';
     next();
   } catch (err) {
     console.error('[staff auth] error', err);
     next(new Error('auth_failed'));
   }
 });
+
 
 staffNamespace.on('connection', (socket) => {
   socket.join(socket.data.tenantId);
