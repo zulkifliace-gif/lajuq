@@ -923,21 +923,26 @@ export function OrderProvider({ children }) {
       }
     }
 
-    return new Promise((resolve) => {
-      if (socketRef.current) {
-        socketRef.current.emit('CREATE_SESSION', {
-          table_number: Number(tableNumber),
-          pax_count: 1
-        }, (response) => {
-          if (response && response.status === 'ok') {
-            resolve(response.session?.session_id || null);
-          } else {
-            resolve(null);
-          }
-        });
-      } else {
-        resolve(null);
+    return new Promise((resolve, reject) => {
+      if (!socketRef.current || !socketRef.current.connected) {
+        return reject(new Error('Sambungan pelayan terputus. Sila muat semula halaman.'));
       }
+
+      const timeout = setTimeout(() => {
+        reject(new Error('Permintaan tamat tempoh (timeout). Sila cuba semula.'));
+      }, 8000); // 8 saat
+
+      socketRef.current.emit('CREATE_SESSION', {
+        table_number: Number(tableNumber),
+        pax_count: 1
+      }, (response) => {
+        clearTimeout(timeout);
+        if (response && response.status === 'ok') {
+          resolve(response.session?.session_id || null);
+        } else {
+          resolve(null);
+        }
+      });
     });
   }, [sessions, tables, orders, broadcastState]);
 
