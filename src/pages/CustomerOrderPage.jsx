@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useOrder } from '../context/OrderContext';
 import { useAuth } from '../context/AuthContext';
 import confetti from 'canvas-confetti';
-import { DotLottieReact } from '@lottiefiles/dotlottie-react';
+
 import { getSubscriptionCycleInfo, getCycleOrdersCount, formatCountdown, FREE_PLAN_LIMIT, isFreePlan } from '../utils/subscriptionQuota';
 import { playCancellationAlertSound, unlockAudioContext } from '../utils/alertSound';
 import { requestNotificationPermission, sendCancellationNotification } from '../utils/notificationHelper';
@@ -1161,12 +1161,9 @@ export default function CustomerOrderPage() {
   if (isSubmitting) {
     return (
       <div className={`min-h-screen ${overlayBg} flex flex-col items-center justify-center p-6 text-center z-50 fixed inset-0 font-sans`}>
-        <div className="w-64 h-64 mb-4">
-          <DotLottieReact
-            src="/pan%20loading.json"
-            loop
-            autoplay
-          />
+        <div className="w-24 h-24 mb-6 relative">
+          <div className="absolute inset-0 rounded-full border-4 border-slate-200 dark:border-slate-700"></div>
+          <div className="absolute inset-0 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin"></div>
         </div>
         <h2 className={`text-2xl font-extrabold ${overlayTitle} mb-2 animate-pulse`}>Memproses Pesanan...</h2>
         <p className={overlaySubtle}>Sila tunggu sebentar sementara pesanan anda disahkan.</p>
