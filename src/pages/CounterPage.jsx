@@ -55,13 +55,13 @@ export default function CounterPage() {
   }, [isMobileMenuOpen]);
 
   // Handle click on empty table to generate new QR session
-  const handleEmptyTableClick = (table) => {
+  const handleEmptyTableClick = async (table) => {
     if (table.current_session_id && sessions[table.current_session_id]?.status === 'ACTIVE') {
       setSelectedTableForQR(table);
       setGeneratedSessionId(table.current_session_id);
     } else {
-      const result = createSession(table.table_number);
-      if (typeof result === 'object' && result.success === false) {
+      const result = await createSession(table.table_number);
+      if (typeof result === 'object' && result !== null && result.success === false) {
         if (result.error === 'FREE_PLAN_LIMIT_REACHED') {
           alert('Had 100 Pesanan (Plan Percuma) telah dicapai! Sila naik taraf langganan untuk terus menerima pesanan.');
         }
