@@ -1383,15 +1383,16 @@ export function OrderProvider({ children }) {
           socketRef.current.emit('UPDATE_SETTINGS', { ...mergedSettings, tenant_id: _tid });
         }
         const BASE = getBackendBaseUrl();
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token || '';
-        try {
-          fetch(`${BASE}/api/settings`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify(mergedSettings)
-          });
-        } catch(e) {}
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          const token = session?.access_token || '';
+          try {
+            fetch(`${BASE}/api/settings`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify(mergedSettings)
+            });
+          } catch(e) {}
+        });
       }
     }
   }, [orders, tables, sessions, broadcastState]);
@@ -1505,15 +1506,16 @@ export function OrderProvider({ children }) {
           socketRef.current.emit('UPDATE_SETTINGS', { ...mergedSettings, tenant_id: _tid });
         }
         const BASE = getBackendBaseUrl();
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token || '';
-        try {
-          fetch(`${BASE}/api/settings`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify(mergedSettings)
-          });
-        } catch(e) {}
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          const token = session?.access_token || '';
+          try {
+            fetch(`${BASE}/api/settings`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify(mergedSettings)
+            });
+          } catch(e) {}
+        });
       }
     }
   }, [orders, tables, sessions, broadcastState]);
