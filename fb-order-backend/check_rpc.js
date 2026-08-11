@@ -2,15 +2,35 @@ require('dotenv').config({path: './.env'});
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-async function checkTenants() {
-  const { data, error } = await supabase.from('tenants').select('*');
-  if (error) { console.log('ERROR:', error.message); return; }
-  console.log('\n✅ Tenants:');
-  data?.forEach(t => {
-    console.log(`\n   Tenant: ${t.name} | slug: ${t.slug}`);
-    console.log(`   id: ${t.id}`);
-    console.log(`   owner_id: ${t.owner_id}`);
-    console.log(`   plan: ${t.plan_type} | status: ${t.subscription_status}`);
-  });
+async function checkSessionsTable() {
+  // Semak jadual sessions
+  const { data: sessions, error: sessErr } = await supabase
+    .from('sessions')
+    .select('*')
+    .limit(3);
+  
+  if (sessErr) {
+    console.log('sessions error:', sessErr.code, sessErr.message);
+  } else {
+    console.log('✅ sessions table ada:', sessions?.length, 'rekod');
+    if (sessions?.length > 0) {
+      console.log('Kunci:', Object.keys(sessions[0]).join(', '));
+      console.log('Contoh rekod:', JSON.stringify(sessions[0], null, 2));
+    }
+  }
+
+  // Semak jadual tables/stands
+  const tableNames = ['tables', 'stands', 'table_sessions', 'order_sessions'];
+  for (const t of tableNames) {
+    const { data, error } = await supabase.from(t).select('*').limit(2);
+    if (!error) {
+      console.log(`\n✅ ${t} table ada: ${data?.length} rekod`);
+      if (data?.length > 0) console.log('   Kunci:', Object.keys(data[0]).join(', '));
+    } else if (error.code === 'PGRST205') {
+      console.log(`❌ ${t}: TIDAK WUJUD`);
+    } else {
+      console.log(`⚠️  ${t}:`, error.message);
+    }
+  }
 }
-checkTenants();
+checkSessionsTable();

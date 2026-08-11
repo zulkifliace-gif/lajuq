@@ -1088,24 +1088,73 @@ staffNamespace.on('connection', (socket) => {
     if (typeof payload?.stand_number !== 'number' && typeof payload?.table_number !== 'number') {
       return callback && callback({ error: 'invalid_payload' });
     }
-    
-    // Convert table_number to stand_number if needed for backward compatibility
-    const standNumber = payload.stand_number || payload.table_number;
 
-    const { data, error } = await supabaseAdmin.rpc('create_or_join_session', {
-      p_slug: null, // Staff bypasses slug check
-      p_stand_number: standNumber,
-      p_access_token: null, // Staff bypass token
-      p_pax_count: payload.pax_count ?? 1
-    });
+    const tenantId = socket.data.tenantId;
+    const tableNumber = payload.stand_number || payload.table_number;
 
-    if (error) throw error;
-    if (data && data.error) return callback && callback({ error: data.error });
+    // 1. Semak sama ada meja sudah ada sesi AKTIF
+    const { data: existingTable } = await supabaseAdmin
+      .from('tables')
+      .select('current_session_id, status')
+      .eq('tenant_id', tenantId)
+      .eq('table_number', tableNumber)
+      .single();
 
-    const updatedState = await getSupabaseSystemState(socket.data.tenantId);
-    staffNamespace.to(socket.data.tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(socket.data.tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
-    if (callback) callback({ status: 'ok', session: data });
+    if (existingTable?.current_session_id && existingTable?.status === 'OCCUPIED') {
+      // Meja sudah ada sesi — kembalikan sesi sedia ada
+      const { data: existSess } = await supabaseAdmin
+        .from('sessions')
+        .select('*')
+        .eq('session_id', existingTable.current_session_id)
+        .eq('tenant_id', tenantId)
+        .single();
+      
+      if (existSess) {
+        const updatedState = await getSupabaseSystemState(tenantId);
+        staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+        customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+        return callback && callback({ status: 'ok', session: existSess });
+      }
+    }
+
+    // 2. Cipta sesi baharu
+    const sessionId = 'SES-' + Math.floor(10000 + Math.random() * 90000);
+    const accessToken = require('crypto').randomUUID();
+
+    const { data: newSession, error: insertErr } = await supabaseAdmin
+      .from('sessions')
+      .insert({
+        tenant_id: tenantId,
+        session_id: sessionId,
+        table_number: tableNumber,
+        status: 'ACTIVE',
+        access_token: accessToken,
+        customer_name: ''
+      })
+      .select()
+      .single();
+
+    if (insertErr) throw insertErr;
+
+    // 3. Kemaskini jadual tables
+    await supabaseAdmin
+      .from('tables')
+      .upsert({
+        tenant_id: tenantId,
+        table_number: tableNumber,
+        status: 'OCCUPIED',
+        current_session_id: sessionId,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'tenant_id,table_number' });
+
+    console.log(`✅ [CREATE_SESSION] Meja ${tableNumber} → Sesi ${sessionId} untuk tenant ${tenantId}`);
+
+    const updatedState = await getSupabaseSystemState(tenantId);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    if (callback) callback({ status: 'ok', session: newSession });
   }));
+
 
   socket.on('SUBMIT_ORDER', safeHandler(async (payload, callback) => {
     if (!Array.isArray(payload?.items) || payload.items.length === 0) {
