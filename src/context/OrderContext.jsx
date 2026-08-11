@@ -441,13 +441,16 @@ export function OrderProvider({ children }) {
     const activeTenantId = tenantRef.current?.id || tenant?.id || localStorage.getItem('fb_tenant_id') || '';
     const BASE = getBackendBaseUrl();
 
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || '';
+
     try {
       console.log('📡 Syncing menu to Supabase for tenant:', activeTenantId, '| Count:', newMenu.length);
       const res = await fetch(`${BASE}/api/menu`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-tenant-id': activeTenantId
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(newMenu)
       });
@@ -698,13 +701,18 @@ export function OrderProvider({ children }) {
         if (isCustomerPath) {
           const session_id = urlParams.get('session') || urlParams.get('s') || localStorage.getItem('fb_customer_session_id') || 'GUEST';
           const tenant_id = urlParams.get('tid') || localStorage.getItem('fb_tenant_id');
+          const token = urlParams.get('token') || localStorage.getItem('fb_customer_token');
           
+          if (urlParams.has('session') || urlParams.has('s')) localStorage.setItem('fb_customer_session_id', session_id);
+          if (urlParams.has('tid')) localStorage.setItem('fb_tenant_id', tenant_id);
+          if (urlParams.has('token')) localStorage.setItem('fb_customer_token', token);
+
           socketRef.current = io(`${BACKEND_URL}/customer`, {
             transports: ['polling', 'websocket'],
             reconnectionAttempts: 20,
             reconnectionDelay: 2000,
             reconnectionDelayMax: 10000,
-            auth: { session_id, tenant_id }
+            auth: { session_id, tenant_id, token }
           });
         } else {
           socketRef.current = io(`${BACKEND_URL}/staff`, {
@@ -915,55 +923,22 @@ export function OrderProvider({ children }) {
       }
     }
 
-    const randomCode = Math.floor(1000 + Math.random() * 9000);
-    const sessionId = `SES-${tableNumber}${randomCode}`;
-
-    const newSession = {
-      session_id: sessionId,
-      table_number: Number(tableNumber),
-      created_at: new Date().toISOString(),
-      status: 'ACTIVE',
-      tenant_id: activeTenant?.id || null
-    };
-
-    const updatedSessions = {
-      ...sessions,
-      [sessionId]: newSession
-    };
-
-    const updatedTables = tables.map(t => {
-      if (t.table_number === Number(tableNumber)) {
-        return { ...t, status: 'ADA_PELANGGAN', current_session_id: sessionId };
+    return new Promise((resolve) => {
+      if (socketRef.current) {
+        socketRef.current.emit('CREATE_SESSION', {
+          table_number: tableNumber,
+          pax_count: 1
+        }, (response) => {
+          if (response && response.status === 'ok') {
+            resolve(response.session?.session_id || null);
+          } else {
+            resolve(null);
+          }
+        });
+      } else {
+        resolve(null);
       }
-      return t;
     });
-
-    setSessions(updatedSessions);
-    setTables(updatedTables);
-    broadcastState('NEW_SESSION', updatedTables, updatedSessions, orders);
-
-    if (activeTenant?.id) {
-      supabase.from('table_sessions').upsert({
-        session_id: newSession.session_id,
-        table_number: newSession.table_number,
-        status: newSession.status,
-        tenant_id: activeTenant.id,
-        created_at: newSession.created_at
-      }).then(({ error }) => {
-        if (error) console.error('Supabase session insert error:', error);
-      });
-    }
-
-    // Emit Socket Event for real-time cross-device sync
-    if (socketRef.current) {
-      socketRef.current.emit('CREATE_SESSION', {
-        table_number: tableNumber,
-        session_id: sessionId,
-        tenant_id: activeTenant?.id || localStorage.getItem('fb_tenant_id')
-      });
-    }
-
-    return sessionId;
   }, [sessions, tables, orders, broadcastState]);
 
   const submitOrder = useCallback(async (sessionId, tableNumber, cartItems, overallNote = '', orderType = 'DINE_IN', customerName = '') => {
@@ -1094,97 +1069,31 @@ export function OrderProvider({ children }) {
       tenant_id: targetTenantId
     };
 
-    if (targetTenantId) {
-      const { error } = await supabase.from('orders').upsert({
-        order_id: newOrder.order_id,
-        session_id: newOrder.session_id,
-        table_number: newOrder.table_number,
-        customer_name: newOrder.customer_name,
-        order_type: newOrder.order_type,
-        items: newOrder.items,
-        total_amount: newOrder.total_amount,
-        kitchen_status: newOrder.kitchen_status,
-        payment_status: newOrder.payment_status,
-        special_instruction: newOrder.special_notes || '',
-        tenant_id: targetTenantId
-      });
-      
-      if (error) {
-        console.error('Supabase order insert error:', error.message);
-        if (error.message.includes('FREE_PLAN_LIMIT_REACHED')) {
-          return { success: false, error: 'FREE_PLAN_LIMIT_REACHED' };
-        }
-        return { success: false, error: error.message };
+    return new Promise((resolve) => {
+      if (socketRef.current) {
+        socketRef.current.emit('SUBMIT_ORDER', {
+          session_id: sessionId,
+          table_number: Number(tableNumber),
+          client_order_draft_id: orderId, // Used for idempotency check on backend
+          order_id: orderId, // For fallback
+          customer_name: formattedName,
+          order_type: orderType,
+          items: newOrder.items,
+          total_amount: totalAmount,
+          special_notes: overallNote,
+          tenant_id: targetTenantId
+        }, (res) => {
+          if (res && res.status === 'ok') {
+            resolve({ success: true, order: res.order });
+          } else {
+            resolve({ success: false, error: res?.error || 'Failed to submit order' });
+          }
+        });
+      } else {
+        // Fallback for when socket is disconnected? We must fail since direct DB write is removed.
+        resolve({ success: false, error: 'Tiada sambungan internet atau server.' });
       }
-    }
-
-    const updatedOrders = [newOrder, ...orders];
-
-    const updatedTables = tables.map(t => {
-      if (t.table_number === Number(tableNumber)) {
-        return { 
-          ...t, 
-          status: 'SEDANG_MAKAN',
-          current_session_id: t.current_session_id || sessionId
-        };
-      }
-      return t;
     });
-
-    // Ensure session object is always registered in sessions state
-    const existingSess = sessions[sessionId];
-    const activeSession = existingSess || {
-      session_id: sessionId,
-      table_number: Number(tableNumber),
-      created_at: new Date().toISOString(),
-      status: 'ACTIVE',
-      customer_name: formattedName,
-      tenant_id: targetTenantId
-    };
-
-    const updatedSessions = {
-      ...sessions,
-      [sessionId]: { ...activeSession, customer_name: formattedName || activeSession.customer_name }
-    };
-
-    if (targetTenantId && !existingSess) {
-      supabase.from('table_sessions').upsert({
-        session_id: sessionId,
-        table_number: Number(tableNumber),
-        status: 'ACTIVE',
-        customer_name: formattedName,
-        tenant_id: targetTenantId,
-        created_at: activeSession.created_at
-      }).then(({ error }) => {
-        if (error) console.error('Supabase session auto-create error:', error);
-      });
-    }
-
-    // NOTE: Stock deduction is handled atomically by the backend (database.js submitOrder).
-    // The backend saves updated menuStock to SQLite and broadcasts via SYSTEM_STATE_UPDATED.
-    // DO NOT deduct stock here on the frontend to prevent double decrement!
-
-    setOrders(updatedOrders);
-    setTables(updatedTables);
-    if (formattedName) setSessions(updatedSessions);
-    broadcastState('NEW_ORDER', updatedTables, formattedName ? updatedSessions : sessions, updatedOrders);
-
-    // Emit Socket Event for real-time cross-device sync (Phone to PC & KDS)
-    if (socketRef.current) {
-      socketRef.current.emit('SUBMIT_ORDER', {
-        session_id: sessionId,
-        table_number: Number(tableNumber),
-        order_id: orderId,
-        customer_name: formattedName,
-        order_type: orderType,
-        items: newOrder.items,
-        total_amount: totalAmount,
-        special_notes: overallNote,
-        tenant_id: targetTenantId
-      });
-    }
-
-    return { success: true, order: newOrder };
   }, [orders, tables, sessions, broadcastState, isAudioEnabled, playBeepSound]);
 
   const updateKitchenStatus = useCallback((orderId, newStatus) => {
@@ -1474,10 +1383,12 @@ export function OrderProvider({ children }) {
           socketRef.current.emit('UPDATE_SETTINGS', { ...mergedSettings, tenant_id: _tid });
         }
         const BASE = getBackendBaseUrl();
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
         try {
           fetch(`${BASE}/api/settings`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify(mergedSettings)
           });
         } catch(e) {}
@@ -1594,10 +1505,12 @@ export function OrderProvider({ children }) {
           socketRef.current.emit('UPDATE_SETTINGS', { ...mergedSettings, tenant_id: _tid });
         }
         const BASE = getBackendBaseUrl();
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
         try {
           fetch(`${BASE}/api/settings`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify(mergedSettings)
           });
         } catch(e) {}
@@ -1606,64 +1519,31 @@ export function OrderProvider({ children }) {
   }, [orders, tables, sessions, broadcastState]);
 
   const completePayment = useCallback((sessionId, tableNumber) => {
-    const updatedSessions = {
-      ...sessions,
-      [sessionId]: {
-        ...sessions[sessionId],
-        status: 'CLOSED',
-        closed_at: new Date().toISOString()
-      }
-    };
+    return new Promise((resolve, reject) => {
+      let client_reported_total = 0;
+      orders.forEach(ord => {
+        if (ord.session_id === sessionId && ord.kitchen_status !== 'CANCELLED') {
+          client_reported_total += Number(ord.total_amount) || 0;
+        }
+      });
 
-    const updatedOrders = orders.map(ord => {
-      if (ord.session_id === sessionId) {
-        const isPaymentPending = ord.kitchen_status === 'PAYMENT_PENDING';
-        return { 
-          ...ord, 
-          payment_status: 'PAID',
-          kitchen_status: isPaymentPending ? 'PENDING' : ord.kitchen_status
-        };
-      }
-      return ord;
-    });
-
-    const updatedTables = tables.map(t => {
-      if (t.table_number === Number(tableNumber)) {
-        return { ...t, status: 'KOSONG', current_session_id: null };
-      }
-      return t;
-    });
-
-    setSessions(updatedSessions);
-    setOrders(updatedOrders);
-    setTables(updatedTables);
-    broadcastState('SESSION_CLOSED', updatedTables, updatedSessions, updatedOrders);
-
-    const activeTenant = tenantRef.current;
-    const tenantId = activeTenant?.id || localStorage.getItem('fb_tenant_id');
-    if (tenantId) {
-      supabase
-        .from('table_sessions')
-        .update({ status: 'CLOSED', closed_at: new Date().toISOString() })
-        .eq('session_id', sessionId)
-        .then(({ error }) => {
-          if (error) console.error('Supabase completePayment session close error:', error);
+      if (socketRef.current) {
+        socketRef.current.emit('COMPLETE_PAYMENT', {
+          session_id: sessionId,
+          table_number: Number(tableNumber),
+          client_reported_total: client_reported_total
+        }, (res) => {
+          if (res && res.status === 'ok') {
+            resolve(true);
+          } else {
+            console.error('Payment rejected by server:', res?.error);
+            reject(new Error(res?.error || 'Payment failed validation'));
+          }
         });
-
-      supabase
-        .from('orders')
-        .update({ payment_status: 'PAID' })
-        .eq('session_id', sessionId)
-        .then(({ error }) => {
-          if (error) console.error('Supabase completePayment order payment error:', error);
-        });
-    }
-
-    // Emit Socket Event for real-time cross-device payment close sync
-    if (socketRef.current) {
-      const _tid = tenantRef.current?.id || localStorage.getItem('fb_tenant_id');
-      socketRef.current.emit('CLOSE_SESSION', { session_id: sessionId, table_number: Number(tableNumber), tenant_id: _tid });
-    }
+      } else {
+        reject(new Error('No socket connection'));
+      }
+    });
   }, [sessions, orders, tables, broadcastState]);
 
   const cancelSession = useCallback((sessionId, tableNumber, reason = 'Sesi dibatalkan oleh kaunter') => {
@@ -1746,7 +1626,12 @@ export function OrderProvider({ children }) {
     // 3. Reset Backend SQLite Database if active
     try {
       const BASE = getBackendBaseUrl();
-      await fetch(`${BASE}/api/reset`, { method: 'POST' });
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      await fetch(`${BASE}/api/reset`, { 
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
     } catch (e) {
       console.warn('Backend reset call bypassed (server offline or local mode)');
     }
@@ -1883,11 +1768,13 @@ export function OrderProvider({ children }) {
     // 2. Also send to REST API /api/feedback
     const BACKEND_URL = getBackendBaseUrl();
     const targetEndpointUrl = `${BACKEND_URL}/api/feedback`;
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || '';
 
     try {
       await fetch(targetEndpointUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-tenant-id': targetTenantId },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(newFb)
       });
     } catch (netErr) {
@@ -1922,10 +1809,12 @@ export function OrderProvider({ children }) {
           socketRef.current.emit('UPDATE_SETTINGS', { ...merged, tenant_id: _tid });
         }
         const BASE = getBackendBaseUrl();
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
         try {
           await fetch(`${BASE}/api/settings`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify(merged)
           });
         } catch(e) {

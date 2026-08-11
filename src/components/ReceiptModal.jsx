@@ -94,6 +94,7 @@ export default function ReceiptModal({ isOpen, onClose, table, session, sessionO
       await printReceiptBluetooth(btDevice, {
         tableNumber: table.table_number,
         sessionId: session.session_id,
+        accessToken: session.access_token,
         sessionOrders: validOrders,
         items: activeItems,
         subtotal: Number(subtotal) || 0,
@@ -350,7 +351,8 @@ export default function ReceiptModal({ isOpen, onClose, table, session, sessionO
             const baseUrl = window.location.origin;
             const cleanSessionId = String(session.session_id || '').replace(/^SES-/, '');
             const tid = localStorage.getItem('fb_tenant_id') || '';
-            const dynamicSessionUrl = `${baseUrl}/o?t=${table.table_number}&s=${cleanSessionId}${tid ? '&tid=' + tid : ''}`;
+            const accessToken = session.access_token || '';
+            const dynamicSessionUrl = `${baseUrl}/o?t=${table.table_number}&s=${cleanSessionId}${tid ? '&tid=' + tid : ''}${accessToken ? '&token=' + accessToken : ''}`;
 
             return (
               <div className="border-t border-dashed border-slate-700/80 pt-4 mt-4 text-center flex flex-col items-center justify-center space-y-2">

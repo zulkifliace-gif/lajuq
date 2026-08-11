@@ -89,9 +89,12 @@ function ImageUploadZone({ currentImage, onImageUploaded }) {
       const targetApi = `${getBaseUrl()}/api/menu/upload-image`;
       console.log("📡 [UPLOAD] Menghantar gambar ke VPS:", targetApi);
 
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
       const res = await fetch(targetApi, {
         method: "POST",
-        headers: { "x-tenant-id": tenantId },
+        headers: { "Authorization": `Bearer ${token}` },
         body: formData
       });
 
@@ -510,9 +513,12 @@ export default function MenuEditorPage() {
 
       let savedUrl = null;
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
+        
         const res = await fetch(`${BASE}/api/banner/upload`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ imageBase64: croppedDataUrl, tenant_id: tenantId }),
         });
         if (res.ok) {

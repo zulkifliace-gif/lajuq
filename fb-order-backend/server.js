@@ -147,6 +147,47 @@ async function getSupabaseSettings(tenantId) {
 }
 
 // ============================================================
+// EXPRESS MIDDLEWARES
+// ============================================================
+
+// Middleware untuk memastikan API endpoint dipanggil oleh staf yang disahkan
+const requireStaffToken = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ status: 'ERROR', message: 'Token pengesahan tiada.' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const { data: userData, error } = await supabaseAdmin.auth.getUser(token);
+    
+    if (error || !userData?.user) {
+      return res.status(401).json({ status: 'ERROR', message: 'Token tidak sah.' });
+    }
+
+    // Ambil profil staf untuk dapatkan tenant_id sebenar
+    const { data: staff, error: staffErr } = await supabaseAdmin
+      .from('staff_profiles')
+      .select('tenant_id, role')
+      .eq('id', userData.user.id)
+      .single();
+
+    if (staffErr || !staff) {
+      return res.status(403).json({ status: 'ERROR', message: 'Akses ditolak: Anda bukan staf yang sah.' });
+    }
+
+    req.user = { id: userData.user.id, ...staff };
+    // MESTI pakai tenant_id dari server (token), bukan dari header client yang boleh dipalsukan!
+    req.tenantId = staff.tenant_id;
+    next();
+  } catch (err) {
+    console.error('[requireStaffToken] Error:', err);
+    res.status(500).json({ status: 'ERROR', message: 'Ralat pelayan semasa pengesahan.' });
+  }
+};
+
+
+// ============================================================
 // MENU DATA PATH (Persistent JSON storage on VPS/PC)
 // ============================================================
 const MENU_DATA_PATH = path.join(__dirname, 'data', 'menu.json');
@@ -178,7 +219,8 @@ const menuImageStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    const tenantId = req.headers['x-tenant-id'] || req.body?.tenant_id || 'default';
+    // Gunakan req.tenantId yang telah disahkan oleh requireStaffToken middleware
+    const tenantId = req.tenantId || 'default';
     const sanitizeTenant = String(tenantId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
     const safeName = `menu-${sanitizeTenant}-${Date.now()}-${Math.floor(Math.random()*10000)}${ext}`;
     cb(null, safeName);
@@ -294,9 +336,9 @@ app.get('/api/state', async (req, res) => {
   }
 });
 
-app.post('/api/reset', async (req, res) => {
+app.post('/api/reset', requireStaffToken, async (req, res) => {
   try {
-    const tenantId = req.headers['x-tenant-id'] || req.body?.tenant_id || DEFAULT_TENANT_ID;
+    const tenantId = req.tenantId;
     // Padam semua sesi aktif, pesanan belum bayar, dan reset meja ke KOSONG
     await Promise.all([
       supabaseAdmin.from('sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('status','ACTIVE'),
@@ -366,12 +408,13 @@ app.get('/api/settings', async (req, res) => {
 });
 
 // POST /api/settings — Update settings & sync DIRECTLY to Supabase tenant_settings Cloud DB
-app.post('/api/settings', async (req, res) => {
+app.post('/api/settings', requireStaffToken, async (req, res) => {
   try {
-    const newSettings = req.body || {};
-    const tenantId = req.headers['x-tenant-id'] || newSettings?.tenant_id || newSettings?.tenantId;
-
-    if (!tenantId) {
+    const newSettings = req.body;
+    
+    // Guna tenant_id dari token yang disahkan (req.tenantId)
+    const tenantId = req.tenantId;
+    if (!tenantId || tenantId === 'default') {
       return res.status(400).json({ status: 'ERROR', message: 'tenant_id diperlukan untuk simpan settings' });
     }
 
@@ -453,14 +496,17 @@ app.get('/api/menu', (req, res) => {
 });
 
 // POST /api/menu — Simpan menu array ke disk & sync ke Supabase menu_items (Service Role)
-app.post('/api/menu', async (req, res) => {
+app.post('/api/menu', requireStaffToken, async (req, res) => {
   try {
     const menuArray = req.body;
     if (!Array.isArray(menuArray)) {
       return res.status(400).json({ status: 'ERROR', message: 'Data menu mesti dalam format senarai (array).' });
     }
 
-    const tenantId = req.headers['x-tenant-id'] || req.body?.tenant_id;
+    const tenantId = req.tenantId;
+    if (!tenantId || tenantId === 'default') {
+      return res.status(400).json({ status: 'ERROR', message: 'tenant_id diperlukan.' });
+    }
 
     // 1. Simpan ke disk (menu.json) — backup lokal
     writeMenuData(menuArray);
@@ -534,9 +580,9 @@ app.post('/api/menu', async (req, res) => {
 });
 
 // POST /api/menu/upload-image
-// Fail gambar disimpan ke PC/VPS (uploads/menu-images/)
-// URL fail dikembalikan kepada frontend untuk disimpan ke Supabase menu_items.image_url
-app.post('/api/menu/upload-image', (req, res) => {
+// Accepts multipart/form-data with a file and tenant_id
+const multer = require('multer');
+app.post('/api/menu/upload-image', requireStaffToken, (req, res) => {
   uploadMenuImage.single('image')(req, res, async (err) => {
     if (err) {
       return res.status(400).json({ status: 'ERROR', message: err.message || 'Gagal muat naik gambar.' });
@@ -561,17 +607,42 @@ app.post('/api/menu/upload-image', (req, res) => {
 });
 
 // DELETE /api/menu/image/:filename — Delete a menu image from server
-app.delete('/api/menu/image/:filename', (req, res) => {
+app.delete('/api/menu/image/:filename', requireStaffToken, (req, res) => {
   try {
     const filename = req.params.filename;
-    // Only allow deleting files in the uploads directory (security)
-    const filePath = path.join(UPLOADS_DIR, path.basename(filename));
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      console.log(`🗑️  IMAGE_DELETED: ${filename}`);
-      res.json({ status: 'OK', message: 'Gambar berjaya dipadam.' });
+    
+    // 1. Sanitize filename: pastikan ia hanya nama fail, bukan path traversal (cth: ../../)
+    const safeFilename = path.basename(filename);
+    
+    // 2. Semak jika fail tersebut milik tenant ini menggunakan EXACT PREFIX MATCH
+    const sanitizeTenant = String(req.tenantId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
+    // Guna startsWith dan tanda '-' untuk elak substring collision
+    if (!safeFilename.startsWith(`menu-${sanitizeTenant}-`)) {
+      return res.status(403).json({ status: 'ERROR', message: 'Akses ditolak: Gambar bukan milik tenant anda.' });
     }
+
+    // 3. Bina path sebenar ke direktori muat naik
+    const filePath = path.join(UPLOADS_DIR, safeFilename);
+
+    // 4. Pengesahan Traversal Ekstra: Pastikan filePath yang diresolve (path mutlak) 
+    // masih berada di dalam direktori UPLOADS_DIR yang dibenarkan.
+    const resolvedFilePath = path.resolve(filePath);
+    const resolvedUploadsDir = path.resolve(UPLOADS_DIR);
+    if (!resolvedFilePath.startsWith(resolvedUploadsDir)) {
+      return res.status(403).json({ status: 'ERROR', message: 'Percubaan capaian tidak sah (Path Traversal).' });
+    }
+
+    // 5. Semak jika fail wujud sebelum padam
+    if (!fs.existsSync(resolvedFilePath)) {
+      return res.status(404).json({ status: 'ERROR', message: 'Gambar tidak dijumpai.' });
+    }
+
+    // Padam fail
+    fs.unlinkSync(resolvedFilePath);
+    console.log(`🗑️  IMAGE_DELETED: ${safeFilename} by Tenant ${req.tenantId}`);
+    res.json({ status: 'OK', message: 'Gambar berjaya dipadam.' });
   } catch (error) {
+    console.error('DELETE_IMAGE Error:', error);
     res.status(500).json({ status: 'ERROR', message: error.message });
   }
 });
@@ -616,9 +687,9 @@ async function sendTelegramFeedbackNotification(feedbackData, telegramConfig) {
 
     const isGood = rating === 'GOOD';
     const ratingBadge = isGood ? '👍 <b>PUAS HATI</b>' : '👎 <b>KURANG PUAS</b>';
-    const orderIdStr = escapeTelegramHtml(order_id || 'N/A');
+    const orderIdStr = escapeHtml(order_id || 'N/A');
     const tableStr = table_number ? ` (MEJA ${table_number})` : '';
-    const nameStr = escapeTelegramHtml(customer_name || 'Pelanggan');
+    const nameStr = escapeHtml(customer_name || 'Pelanggan');
 
     let itemsList = '<i>(Tiada item ditandakan)</i>';
     let parsedItems = commented_items;
@@ -692,6 +763,32 @@ const handlePublicFeedbackSubmission = async (req, res) => {
     const commented_items = body.commented_items || body.commentedItems || [];
     const comment = body.comment || body.feedback || body.message || '';
     const tenantId = req.headers['x-tenant-id'] || body.tenant_id || body.tenantId || 'f75e8dfd-67cd-475f-b88c-2f1ba391e1bc';
+
+    // Check if order exists and is PAID
+    if (order_id !== 'N/A') {
+      const { data: orderData } = await supabaseAdmin
+        .from('orders')
+        .select('payment_status')
+        .eq('tenant_id', tenantId)
+        .eq('order_id', order_id)
+        .single();
+        
+      if (!orderData || orderData.payment_status !== 'PAID') {
+        return res.status(403).json({ status: 'ERROR', message: 'Sila buat pembayaran sebelum meninggalkan maklum balas.' });
+      }
+
+      // Check if feedback already exists for this order
+      const { data: existingFeedback } = await supabaseAdmin
+        .from('customer_feedbacks')
+        .select('feedback_id')
+        .eq('tenant_id', tenantId)
+        .eq('order_id', order_id)
+        .maybeSingle();
+
+      if (existingFeedback) {
+        return res.status(409).json({ status: 'ERROR', message: 'Maklum balas telah pun dihantar untuk pesanan ini.' });
+      }
+    }
 
     const feedbackRecord = {
       tenant_id: tenantId,
@@ -838,71 +935,42 @@ Sistem F&B Ordering anda kini telah berjaya dihubungkan ke Telegram Bot!
 // POST /api/banner/upload
 // Fail banner disimpan ke PC/VPS (uploads/banners/)
 // URL dikemas kini ke Supabase tenant_settings.welcome_banner_url
-app.post('/api/banner/upload', async (req, res) => {
-  try {
-    const { imageBase64, tenant_id } = req.body || {};
-    const headerTenant = req.headers['x-tenant-id'];
-    const activeTenantId = tenant_id || headerTenant || 'default';
-    const sanitizeTenant = String(activeTenantId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
+app.post('/api/banner/upload', requireStaffToken, async (req, res) => {
+  uploadMenuImage.single('banner')(req, res, async (err) => {
+    if (err) return res.status(400).json({ status: 'ERROR', message: err.message });
+    if (!req.file) return res.status(400).json({ status: 'ERROR', message: 'Tiada fail gambar banner dihantar.' });
 
-    if (!imageBase64) {
-      return res.status(400).json({ status: 'ERROR', message: 'Tiada data gambar yang dihantar.' });
-    }
+    const tenantId = req.tenantId; // Derived dari JWT
+    const imageUrl = `/uploads/menu-images/${req.file.filename}`;
 
-    const matches = imageBase64.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (!matches) {
-      return res.status(400).json({ status: 'ERROR', message: 'Format data gambar tidak sah.' });
-    }
-
-    const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
-    const base64Data = matches[2];
-    const buffer = Buffer.from(base64Data, 'base64');
-    const filename = `welcome-banner-${sanitizeTenant}-${Date.now()}.${ext}`;
-
-    // Simpan fail ke disk PC/VPS
-    const filePath = path.join(BANNER_UPLOAD_DIR, filename);
-    fs.writeFileSync(filePath, buffer);
-
-    // Bina URL relatif berasaskan /uploads/ (bebas masalah domain/localhost)
-    const bannerUrl = `/uploads/banners/${filename}`;
-
-    console.log(`🖼️  BANNER_SAVED (VPS): ${filename} (${(buffer.length/1024).toFixed(1)}KB)`);
-    console.log(`🔗  URL: ${bannerUrl}`);
+    console.log(`🖼️  BANNER_SAVED (VPS): ${req.file.filename} (${(req.file.size/1024).toFixed(1)}KB)`);
+    console.log(`🔗  URL: ${imageUrl}`);
 
     // Kemaskini URL ke Supabase tenant_settings.welcome_banner_url
-    if (activeTenantId && activeTenantId !== 'default') {
+    if (tenantId && tenantId !== 'default') {
       const { error: dbErr } = await supabaseAdmin
         .from('tenant_settings')
         .upsert({
-          tenant_id: activeTenantId,
-          welcome_banner_url: bannerUrl
+          tenant_id: tenantId,
+          welcome_banner_url: imageUrl
         }, { onConflict: 'tenant_id' });
 
       if (dbErr) {
         console.warn('⚠️  Supabase banner URL update warning:', dbErr.message);
       } else {
-        console.log(`✅  Supabase tenant_settings.welcome_banner_url updated: ${bannerUrl}`);
+        console.log(`✅  Supabase tenant_settings.welcome_banner_url updated: ${imageUrl}`);
       }
     }
 
-    res.json({ status: 'OK', message: 'Banner disimpan di server & URL dikemas kini ke Supabase!', url: bannerUrl });
-
-  } catch (error) {
-    console.error('BANNER_UPLOAD Error:', error);
-    res.status(500).json({ status: 'ERROR', message: error.message });
-  }
+    res.json({ status: 'OK', message: 'Banner disimpan di server & URL dikemas kini ke Supabase!', url: imageUrl });
+  });
 });
 
 // POST /api/banner/reset — Reset banner ke null di Supabase
-app.post('/api/banner/reset', async (req, res) => {
+app.post('/api/banner/reset', requireStaffToken, async (req, res) => {
   try {
-    const headerTenant = req.headers['x-tenant-id'];
-    const { tenant_id } = req.body || {};
-    const activeTenantId = tenant_id || headerTenant;
-
-    if (!activeTenantId) {
-      return res.status(400).json({ status: 'ERROR', message: 'Tenant ID diperlukan.' });
-    }
+    const tenantId = req.tenantId; // Derived dari JWT
+    if (!tenantId) return res.status(400).json({ status: 'ERROR', message: 'tenant_id (JWT) diperlukan.' });
 
     const { error: dbErr } = await supabaseAdmin
       .from('tenant_settings')
@@ -1036,6 +1104,58 @@ staffNamespace.on('connection', (socket) => {
     if (callback) callback({ status: 'ok', session: data });
   }));
 
+  socket.on('SUBMIT_ORDER', safeHandler(async (payload, callback) => {
+    if (!Array.isArray(payload?.items) || payload.items.length === 0) {
+      return callback && callback({ error: 'invalid_payload' });
+    }
+    
+    const tenantId = socket.data.tenantId;
+    const sessionId = payload.session_id;
+    const { client_order_draft_id } = payload;
+    
+    // Idempotency Check
+    if (client_order_draft_id) {
+      const { data: existingDraft } = await supabaseAdmin
+        .from('orders')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('client_order_draft_id', client_order_draft_id)
+        .single();
+        
+      if (existingDraft) {
+        return callback && callback({ status: 'ok', order: existingDraft });
+      }
+    }
+
+    const { data: order, error } = await supabaseAdmin
+      .from('orders')
+      .insert({ 
+        tenant_id: tenantId, 
+        session_id: sessionId, 
+        items: payload.items,
+        customer_name: payload.customerName || payload.customer_name || '',
+        order_type: payload.orderType || payload.order_type || 'DINE_IN',
+        subtotal: payload.subtotal || payload.total_amount || 0,
+        tax: payload.tax || 0,
+        total_amount: payload.total_amount || payload.subtotal || 0,
+        special_instruction: payload.specialInstruction || payload.special_notes || null,
+        kitchen_status: 'PENDING',
+        payment_status: 'UNPAID',
+        client_order_draft_id: client_order_draft_id || payload.order_id || null // use order_id as fallback for idempotency
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    staffNamespace.to(tenantId).emit('NEW_ORDER_RECEIVED', order);
+    
+    const updatedState = await getSupabaseSystemState(tenantId);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+
+    if (callback) callback({ status: 'ok', order });
+  }));
+
   socket.on('UPDATE_KITCHEN_STATUS', safeHandler(async (payload, callback) => {
     const tenantId = socket.data.tenantId;
     const { order_id, status } = payload;
@@ -1061,10 +1181,63 @@ staffNamespace.on('connection', (socket) => {
     if (callback) callback({ status: 'ok' });
   }));
 
+  socket.on('COMPLETE_PAYMENT', safeHandler(async (payload, callback) => {
+    const tenantId = socket.data.tenantId;
+    const { session_id, client_reported_total } = payload;
+    
+    // Server-side recomputation of orders
+    const { data: sessionOrders } = await supabaseAdmin
+      .from('orders')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('session_id', session_id)
+      .neq('kitchen_status', 'CANCELLED');
+
+    let serverCalculatedTotal = 0;
+    if (sessionOrders) {
+      sessionOrders.forEach(ord => {
+        serverCalculatedTotal += Number(ord.total_amount) || 0;
+      });
+    }
+
+    const difference = Math.abs(serverCalculatedTotal - (client_reported_total || 0));
+    
+    // BUSINESS RULE: Toleransi RM1.00 dibenarkan untuk mengelakkan transaksi sah
+    // daripada dihalang (blocked) yang mungkin disebabkan oleh isu rounding kumulatif
+    // (SST & Service Charge) merentasi pelbagai item berlainan dalam satu bil.
+    // Jika perbezaan > RM0.05, ia hanya dilog untuk pemantauan.
+    // Jika perbezaan > RM1.00, ia dianggap anomali material dan transaksi ditolak.
+    if (difference > 0.05) {
+      await supabaseAdmin.from('payment_discrepancy_log').insert({
+        tenant_id: tenantId,
+        session_id: session_id,
+        client_reported_total: client_reported_total,
+        server_calculated_total: serverCalculatedTotal,
+        discrepancy_amount: difference
+      });
+      console.warn(`[PAYMENT DISCREPANCY] Tenant ${tenantId} Session ${session_id} Client: ${client_reported_total} Server: ${serverCalculatedTotal}`);
+      
+      // Reject payment if discrepancy is too high
+      if (difference > 1.00) {
+        return callback && callback({ error: 'discrepancy_too_high', server_total: serverCalculatedTotal });
+      }
+    }
+
+    // Update sessions and orders to PAID/CLOSED
+    await supabaseAdmin.from('sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
+    await supabaseAdmin.from('orders').update({ payment_status: 'PAID' }).eq('tenant_id', tenantId).eq('session_id', session_id);
+    await supabaseAdmin.from('table_sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
+
+    const updatedState = await getSupabaseSystemState(tenantId);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    if (callback) callback({ status: 'ok' });
+  }));
+
   socket.on('CLOSE_SESSION', safeHandler(async (payload, callback) => {
     const tenantId = socket.data.tenantId;
     const { session_id } = payload;
     await supabaseAdmin.from('sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
+    await supabaseAdmin.from('table_sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
     const updatedState = await getSupabaseSystemState(tenantId);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok' });
@@ -1116,8 +1289,24 @@ staffNamespace.on('connection', (socket) => {
 
 customerNamespace.use(async (socket, next) => {
   try {
-    const { session_id, tenant_id } = socket.handshake.auth || {};
+    const { session_id, tenant_id, token } = socket.handshake.auth || {};
     if (!tenant_id) return next(new Error('missing_tenant_id'));
+
+    if (session_id) {
+      // Semak jadual sessions untuk sahkan token pelanggan
+      const { data: sessionData } = await supabaseAdmin
+        .from('sessions')
+        .select('access_token')
+        .eq('session_id', session_id)
+        .eq('tenant_id', tenant_id)
+        .single();
+        
+      if (sessionData && sessionData.access_token) {
+        if (token !== sessionData.access_token) {
+          return next(new Error('unauthorized_token'));
+        }
+      }
+    }
 
     socket.data.tenantId = tenant_id;
     socket.data.sessionId = session_id || 'GUEST';
@@ -1165,20 +1354,109 @@ customerNamespace.on('connection', (socket) => {
       return callback && callback({ error: 'session_expired' });
     }
 
+    const { client_order_draft_id } = payload;
+    
+    // Idempotency Check
+    if (client_order_draft_id) {
+      const { data: existingDraft } = await supabaseAdmin
+        .from('orders')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('client_order_draft_id', client_order_draft_id)
+        .single();
+        
+      if (existingDraft) {
+        return callback && callback({ status: 'ok', order: existingDraft });
+      }
+    }
+
+    // --- TUGASAN D: SERVER-SIDE PRICE CALCULATION ---
+    // Ambil harga sebenar dari jadual menu_items di Supabase
+    const { data: dbMenuItems, error: menuErr } = await supabaseAdmin
+      .from('menu_items')
+      .select('id, price, is_active')
+      .eq('tenant_id', tenantId);
+
+    if (menuErr) {
+      return callback && callback({ error: 'menu_error', message: 'Gagal menyemak harga menu dari pelayan.' });
+    }
+
+    const menuMap = {};
+    if (dbMenuItems) {
+      dbMenuItems.forEach(item => menuMap[item.id] = item);
+    }
+
+    let calculatedSubtotal = 0;
+
+    // Validate setiap item dan semak harga sebenar
+    for (let clientItem of payload.items) {
+      const dbItem = menuMap[clientItem.id];
+      
+      // Semak jika item tidak wujud atau tidak aktif
+      if (!dbItem) {
+        return callback && callback({ error: 'item_not_found', message: `Item "${clientItem.name || 'Unknown'}" tidak wujud dalam menu terkini. Sila muat semula menu.` });
+      }
+      if (dbItem.is_active === false) {
+        return callback && callback({ error: 'item_inactive', message: `Item "${clientItem.name || 'Unknown'}" telah kehabisan stok atau tidak aktif.` });
+      }
+
+      // LAJUQ tidak mempunyai harga pada option (hanya string), jadi harga final = base price
+      const finalItemPrice = Number(dbItem.price) || 0;
+      const quantity = Number(clientItem.quantity) || 1;
+      calculatedSubtotal += (finalItemPrice * quantity);
+
+      // Override harga item dari payload client dengan harga sebenar dari DB
+      clientItem.price = finalItemPrice;
+    }
+
+    // Pengiraan Cukai & Caj Tambahan dari tenant_settings
+    const settings = await getSupabaseSettings(tenantId);
+    let calculatedTax = 0;
+    
+    if (settings.enableSst) {
+      calculatedTax += calculatedSubtotal * ((settings.sstRate || 0) / 100);
+    }
+    if (settings.enableServiceCharge) {
+      calculatedTax += calculatedSubtotal * ((settings.serviceChargeRate || 0) / 100);
+    }
+    
+    let takeawayCharge = 0;
+    const isTakeaway = payload.orderType === 'TAKEAWAY' || payload.order_type === 'TAKEAWAY';
+    if (isTakeaway && settings.enableTakeawayCharge) {
+      if (settings.takeawayChargeType === '%') {
+        takeawayCharge = calculatedSubtotal * ((settings.takeawayChargeAmount || 0) / 100);
+      } else {
+        takeawayCharge = Number(settings.takeawayChargeAmount || 0);
+      }
+    }
+
+    let customChargeTotal = 0;
+    if (settings.enableCustomCharge) {
+      if (settings.customChargeType === '%') {
+        customChargeTotal = calculatedSubtotal * ((settings.customChargeAmount || 0) / 100);
+      } else {
+        customChargeTotal = Number(settings.customChargeAmount || 0);
+      }
+    }
+
+    calculatedTax += takeawayCharge + customChargeTotal;
+    const calculatedTotal = calculatedSubtotal + calculatedTax;
+
     const { data: order, error } = await supabaseAdmin
       .from('orders')
       .insert({ 
         tenant_id: tenantId, 
         session_id: sessionId, 
         items: payload.items,
-        customer_name: payload.customerName || '',
-        order_type: payload.orderType || 'DINE_IN',
-        subtotal: payload.subtotal || 0,
-        tax: payload.tax || 0,
-        total_amount: payload.total_amount || 0,
-        special_instruction: payload.specialInstruction || null,
+        customer_name: payload.customerName || payload.customer_name || '',
+        order_type: payload.orderType || payload.order_type || 'DINE_IN',
+        subtotal: calculatedSubtotal, // Guna nilai server
+        tax: calculatedTax,           // Guna nilai server
+        total_amount: calculatedTotal, // Guna nilai server
+        special_instruction: payload.specialInstruction || payload.special_notes || null,
         kitchen_status: 'PENDING',
-        payment_status: 'UNPAID'
+        payment_status: 'UNPAID',
+        client_order_draft_id: client_order_draft_id || null
       })
       .select()
       .single();
@@ -1202,6 +1480,18 @@ customerNamespace.on('connection', (socket) => {
     }
 
     const tenantId = socket.data.tenantId;
+
+    // Check if feedback already exists for this session/order in Socket handler
+    const { data: existingFeedback } = await supabaseAdmin
+      .from('customer_feedbacks')
+      .select('feedback_id')
+      .eq('tenant_id', tenantId)
+      .eq('session_id', socket.data.sessionId)
+      .maybeSingle();
+
+    if (existingFeedback) {
+      return callback && callback({ error: 'Maklum balas telah pun dihantar.' });
+    }
 
     const { data: feedback, error } = await supabaseAdmin
       .from('customer_feedbacks')

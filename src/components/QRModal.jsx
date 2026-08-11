@@ -5,7 +5,7 @@ import { X, Printer, CheckCircle, Copy, Bluetooth, Loader2 } from 'lucide-react'
 import { printQRSlipBluetooth } from '../utils/bluetoothPrinter';
 
 export default function QRModal({ isOpen, onClose, tableNumber, sessionId }) {
-  const { btDevice } = useOrder();
+  const { btDevice, sessions } = useOrder();
   const [copied, setCopied] = useState(false);
   const [btPrinting, setBtPrinting] = useState(false);
   const [btMsg, setBtMsg] = useState('');
@@ -23,10 +23,13 @@ export default function QRModal({ isOpen, onClose, tableNumber, sessionId }) {
 
   if (!isOpen || !sessionId) return null;
 
+  const currentSession = sessions?.[sessionId];
+  const accessToken = currentSession?.access_token || '';
+
   // Ultra-Short URL format for GOOJPRT 58mm printer compatibility (/o?t=X&s=YZ)
   const shortSessionId = sessionId.replace(/^SES-/, '');
   const tid = localStorage.getItem('fb_tenant_id') || '';
-  const orderUrl = `${window.location.origin}/o?t=${tableNumber}&s=${shortSessionId}${tid ? '&tid=' + tid : ''}`;
+  const orderUrl = `${window.location.origin}/o?t=${tableNumber}&s=${shortSessionId}${tid ? '&tid=' + tid : ''}${accessToken ? '&token=' + accessToken : ''}`;
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(orderUrl);

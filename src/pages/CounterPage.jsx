@@ -128,13 +128,18 @@ export default function CounterPage() {
   };
 
   // Handle Confirm Payment — with double-submit guard
-  const handleConfirmPayment = (sessionId, tableNumber) => {
+  const handleConfirmPayment = async (sessionId, tableNumber) => {
     if (isConfirmingPayment) return; // Prevent double-submit
     setIsConfirmingPayment(true);
-    completePayment(sessionId, tableNumber);
-    setSelectedTableForBilling(null);
-    // Release guard after short delay to allow state to settle
-    setTimeout(() => setIsConfirmingPayment(false), 2000);
+    try {
+      await completePayment(sessionId, tableNumber);
+      setSelectedTableForBilling(null);
+    } catch (err) {
+      alert(`Ralat pembayaran: ${err.message}`);
+    } finally {
+      // Release guard after short delay to allow state to settle
+      setTimeout(() => setIsConfirmingPayment(false), 2000);
+    }
   };
 
   // Filtered tables by status & search query
