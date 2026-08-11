@@ -938,7 +938,7 @@ export function OrderProvider({ children }) {
       }, (response) => {
         clearTimeout(timeout);
         if (response && response.status === 'ok') {
-          resolve(response.session?.session_id || null);
+          resolve(response.session?.session_id || response.session?.id || null);
         } else {
           resolve(null);
         }

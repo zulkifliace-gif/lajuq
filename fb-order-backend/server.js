@@ -1091,8 +1091,7 @@ staffNamespace.on('connection', (socket) => {
       p_slug: null, // Staff bypasses slug check
       p_stand_number: standNumber,
       p_access_token: null, // Staff bypass token
-      p_pax_count: payload.pax_count ?? 1,
-      p_tenant_id: socket.data.tenantId // Custom param to allow staff bypass
+      p_pax_count: payload.pax_count ?? 1
     });
 
     if (error) throw error;
