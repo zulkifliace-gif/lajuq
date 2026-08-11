@@ -736,6 +736,10 @@ export function OrderProvider({ children }) {
           console.log('⚠️ Socket disconnected:', reason);
         });
 
+        socketRef.current.on('connect_error', (err) => {
+          console.error('❌ Socket connect_error:', err.message, err.data);
+        });
+
         socketRef.current.on('INIT_STATE', (state) => {
           if (state) {
             if (state.tables && state.tables.length > 0) setTables(state.tables);
@@ -924,24 +928,33 @@ export function OrderProvider({ children }) {
     }
 
     return new Promise((resolve, reject) => {
-      if (!socketRef.current || !socketRef.current.connected) {
-        return reject(new Error('Sambungan pelayan terputus. Sila muat semula halaman.'));
-      }
-
-      const timeout = setTimeout(() => {
-        reject(new Error('Permintaan tamat tempoh (timeout). Sila cuba semula.'));
-      }, 8000); // 8 saat
-
-      socketRef.current.emit('CREATE_SESSION', {
-        table_number: Number(tableNumber),
-        pax_count: 1
-      }, (response) => {
-        clearTimeout(timeout);
-        if (response && response.status === 'ok') {
-          resolve(response.session?.session_id || response.session?.id || null);
+      // Tunggu socket connect jika sedang dalam proses reconnect (maks 6 saat)
+      const waitForSocket = (remainingMs, cb) => {
+        if (socketRef.current && socketRef.current.connected) {
+          cb();
+        } else if (remainingMs <= 0) {
+          reject(new Error('Sambungan pelayan terputus. Sila muat semula halaman.'));
         } else {
-          resolve(null);
+          setTimeout(() => waitForSocket(remainingMs - 200, cb), 200);
         }
+      };
+
+      waitForSocket(6000, () => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Permintaan tamat tempoh (timeout). Sila cuba semula.'));
+        }, 8000); // 8 saat
+
+        socketRef.current.emit('CREATE_SESSION', {
+          table_number: Number(tableNumber),
+          pax_count: 1
+        }, (response) => {
+          clearTimeout(timeout);
+          if (response && response.status === 'ok') {
+            resolve(response.session?.session_id || response.session?.id || null);
+          } else {
+            resolve(null);
+          }
+        });
       });
     });
   }, [sessions, tables, orders, broadcastState]);
