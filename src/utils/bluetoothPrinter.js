@@ -447,7 +447,7 @@ export async function printQRSlipBluetooth(printerConnection, data, settings = {
   const headerTitle = settings.headerTitle || 'RESTORAN RASA SELERA';
 
   const baseUrl = orderUrl ? orderUrl.split('/order')[0].split('/o')[0] : window.location.origin;
-  const cleanSessionId = sessionId.replace(/^SES-/, '');
+  const cleanSessionId = String(sessionId || '').replace(/^SES-/, '');
   const tid = localStorage.getItem('fb_tenant_id') || '';
   const shortUrl = `${baseUrl}/o?t=${tableNumber}&s=${cleanSessionId}${tid ? '&tid=' + tid : ''}`;
 
