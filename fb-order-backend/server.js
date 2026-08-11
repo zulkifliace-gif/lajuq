@@ -1092,7 +1092,7 @@ staffNamespace.on('connection', (socket) => {
     const tenantId = socket.data.tenantId;
     const tableNumber = payload.stand_number || payload.table_number;
 
-    // 1. Semak sama ada meja sudah ada sesi AKTIF
+    // 1. Semak sama ada meja sudah ada sesi AKTIF (status bukan KOSONG)
     const { data: existingTable } = await supabaseAdmin
       .from('tables')
       .select('current_session_id, status')
@@ -1100,13 +1100,14 @@ staffNamespace.on('connection', (socket) => {
       .eq('table_number', tableNumber)
       .single();
 
-    if (existingTable?.current_session_id && existingTable?.status === 'OCCUPIED') {
-      // Meja sudah ada sesi — kembalikan sesi sedia ada
+    if (existingTable?.current_session_id && existingTable?.status !== 'KOSONG') {
+      // Meja sudah ada sesi — semak sesi masih ACTIVE
       const { data: existSess } = await supabaseAdmin
         .from('sessions')
         .select('*')
         .eq('session_id', existingTable.current_session_id)
         .eq('tenant_id', tenantId)
+        .eq('status', 'ACTIVE')
         .single();
       
       if (existSess) {
@@ -1136,16 +1137,20 @@ staffNamespace.on('connection', (socket) => {
 
     if (insertErr) throw insertErr;
 
-    // 3. Kemaskini jadual tables
-    await supabaseAdmin
+    // 3. Kemaskini jadual tables — guna 'ADA_PELANGGAN' supaya UI tahu meja berisi
+    const { error: upsertErr } = await supabaseAdmin
       .from('tables')
       .upsert({
         tenant_id: tenantId,
         table_number: tableNumber,
-        status: 'OCCUPIED',
+        status: 'ADA_PELANGGAN',
         current_session_id: sessionId,
         updated_at: new Date().toISOString()
       }, { onConflict: 'tenant_id,table_number' });
+
+    if (upsertErr) {
+      console.error('[CREATE_SESSION] upsert tables error:', upsertErr.message);
+    }
 
     console.log(`✅ [CREATE_SESSION] Meja ${tableNumber} → Sesi ${sessionId} untuk tenant ${tenantId}`);
 

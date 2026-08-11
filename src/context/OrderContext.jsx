@@ -782,6 +782,7 @@ export function OrderProvider({ children }) {
               return Array.from(map.values());
             });
             // feedbacks TIDAK diambil dari Socket state — diuruskan 100% dari Supabase Cloud
+            const st = state.receiptSettings || state.settings;
             if (st) {
               setReceiptSettings(prev => ({ ...prev, ...st }));
             }
