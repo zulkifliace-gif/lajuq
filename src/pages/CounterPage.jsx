@@ -61,6 +61,9 @@ export default function CounterPage() {
       setGeneratedSessionId(table.current_session_id);
     } else {
       const result = await createSession(table.table_number);
+      if (result === null) {
+        throw new Error("Sesi gagal dicipta (Mungkin isu payload atau server).");
+      }
       if (typeof result === 'object' && result !== null && result.success === false) {
         if (result.error === 'FREE_PLAN_LIMIT_REACHED') {
           alert('Had 100 Pesanan (Plan Percuma) telah dicapai! Sila naik taraf langganan untuk terus menerima pesanan.');

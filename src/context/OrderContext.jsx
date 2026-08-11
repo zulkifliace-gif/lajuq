@@ -926,7 +926,7 @@ export function OrderProvider({ children }) {
     return new Promise((resolve) => {
       if (socketRef.current) {
         socketRef.current.emit('CREATE_SESSION', {
-          table_number: tableNumber,
+          table_number: Number(tableNumber),
           pax_count: 1
         }, (response) => {
           if (response && response.status === 'ok') {
