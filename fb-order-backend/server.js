@@ -1303,9 +1303,25 @@ staffNamespace.on('connection', (socket) => {
   socket.on('CANCEL_SESSION', safeHandler(async (payload, callback) => {
     const tenantId = socket.data.tenantId;
     const { session_id, reason } = payload;
-    await supabaseAdmin.from('sessions').update({ status: 'CLOSED', is_cancelled: true, closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
+    
+    // 1. Tutup sesi
+    await supabaseAdmin.from('sessions').update({ 
+      status: 'CLOSED', 
+      is_cancelled: true, 
+      cancel_reason: reason || 'Sesi dibatalkan oleh kaunter',
+      closed_at: new Date().toISOString() 
+    }).eq('tenant_id', tenantId).eq('session_id', session_id);
+    
+    // 2. Kosongkan meja (cari meja yang ada sesi ini dan set KOSONG)
+    await supabaseAdmin.from('tables').update({
+      status: 'KOSONG',
+      current_session_id: null,
+      updated_at: new Date().toISOString()
+    }).eq('tenant_id', tenantId).eq('current_session_id', session_id);
+
     const updatedState = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); 
+    customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     staffNamespace.to(tenantId).emit('SESSION_HAS_BEEN_CANCELLED', { session_id, reason: reason || 'Sesi dibatalkan oleh kaunter' });
     if (callback) callback({ status: 'ok' });
   }));
