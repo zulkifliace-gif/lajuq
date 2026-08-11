@@ -572,11 +572,16 @@ export default function CounterPage() {
                     isAdaPelanggan ? 'bg-amber-950/30 border-amber-500/50 hover:border-amber-400 hover:bg-amber-950/50' :
                     'bg-blue-950/30 border-blue-500/50 hover:border-blue-400 hover:bg-blue-950/50'
                   }`}
-                  onClick={() => {
-                    if (isKosong) {
-                      handleEmptyTableClick(table);
-                    } else {
-                      handleActiveTableClick(table);
+                  onClick={async () => {
+                    try {
+                      if (isKosong) {
+                        await handleEmptyTableClick(table);
+                      } else {
+                        handleActiveTableClick(table);
+                      }
+                    } catch (err) {
+                      console.error('Failed to handle table click:', err);
+                      alert('Gagal membuka meja. Sila cuba semula.');
                     }
                   }}
                 >
