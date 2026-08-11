@@ -686,7 +686,11 @@ export default function CounterPage() {
       {selectedTableForBilling && (
         <ReceiptModal
           table={selectedTableForBilling}
-          session={sessions[selectedTableForBilling.current_session_id]}
+          session={sessions[selectedTableForBilling.current_session_id] || { 
+            session_id: selectedTableForBilling.current_session_id, 
+            table_number: selectedTableForBilling.table_number, 
+            status: 'ACTIVE' 
+          }}
           sessionOrders={orders.filter(o => o.session_id === selectedTableForBilling.current_session_id)}
           isOpen={Boolean(selectedTableForBilling)}
           onClose={() => setSelectedTableForBilling(null)}

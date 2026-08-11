@@ -1605,11 +1605,19 @@ export function OrderProvider({ children }) {
     const tenantId = activeTenant?.id || localStorage.getItem('fb_tenant_id');
     if (tenantId) {
       supabase
-        .from('table_sessions')
-        .update({ status: 'CLOSED', is_cancelled: true, closed_at: new Date().toISOString() })
+        .from('sessions')
+        .update({ status: 'CLOSED', is_cancelled: true, cancel_reason: reason || 'Sesi dibatalkan oleh kaunter', closed_at: new Date().toISOString() })
         .eq('session_id', sessionId)
         .then(({ error }) => {
           if (error) console.error('Supabase cancelSession error:', error);
+        });
+
+      supabase
+        .from('tables')
+        .update({ status: 'KOSONG', current_session_id: null, updated_at: new Date().toISOString() })
+        .eq('current_session_id', sessionId)
+        .then(({ error }) => {
+          if (error) console.error('Supabase update table status error:', error);
         });
 
       supabase
