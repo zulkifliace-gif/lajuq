@@ -581,7 +581,6 @@ app.post('/api/menu', requireStaffToken, async (req, res) => {
 
 // POST /api/menu/upload-image
 // Accepts multipart/form-data with a file and tenant_id
-const multer = require('multer');
 app.post('/api/menu/upload-image', requireStaffToken, (req, res) => {
   uploadMenuImage.single('image')(req, res, async (err) => {
     if (err) {
