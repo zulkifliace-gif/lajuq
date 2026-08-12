@@ -352,6 +352,17 @@ app.get('/api/health', async (req, res) => {
 app.get('/api/db/ping', async (req, res) => {
   const startTime = Date.now();
   try {
+    // Simulation hook for testing DB unreachable state via query param ?simulate=error
+    if (req.query.simulate === 'error' || req.query.simulate === 'down') {
+      return res.status(500).json({
+        status: 'ERROR',
+        isDbReachable: false,
+        latencyMs: 42,
+        error: 'Simulated DB Unreachable Error (Ujian Simulasi DB Down)',
+        timestamp: new Date().toISOString()
+      });
+    }
+
     // Ultra-lightweight HEAD count query (0 byte payload)
     const { error } = await supabaseAdmin
       .from('tenants')
