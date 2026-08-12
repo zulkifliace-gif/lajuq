@@ -428,6 +428,20 @@ export default function CounterPage() {
                 <ChevronRight className="w-4 h-4 opacity-50" />
               </Link>
 
+              {/* HEALTH CHECK DASHBOARD */}
+              <Link
+                to="/admin/health"
+                target="_blank"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="w-full p-3.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-bold rounded-2xl text-xs flex items-center justify-between border border-indigo-500/30 transition"
+              >
+                <span className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-indigo-400" />
+                  <span>Pantau Sistem (Health Check)</span>
+                </span>
+                <ChevronRight className="w-4 h-4 opacity-50" />
+              </Link>
+
               {/* RESET SYSTEM DATA */}
               <button
                 onClick={async () => {

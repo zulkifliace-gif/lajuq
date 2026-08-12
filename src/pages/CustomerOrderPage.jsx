@@ -1092,6 +1092,8 @@ export default function CustomerOrderPage() {
     if (!result || result.success === false) {
       if (result && result.error === 'FREE_PLAN_LIMIT_REACHED') {
         alert('MAAF! Restoran ini telah mencapai had maksimum pesanan percuma. Sila hubungi pelayan/kaunter untuk membuat pesanan secara manual.');
+      } else {
+        alert(`Pesanan Gagal: ${result?.error || result?.message || 'Sila semak sambungan internet anda.'}`);
       }
       // ORDER BLOCKED DUE TO STOCK ISSUE OR CLOSED SESSION OR QUOTA!
       // Keep customer in Cart Drawer / Checkout Page so they can edit cart!

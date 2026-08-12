@@ -13,6 +13,7 @@ import CounterPage from './pages/CounterPage';
 import CustomerOrderPage from './pages/CustomerOrderPage';
 import KitchenPage from './pages/KitchenPage';
 import MenuEditorPage from './pages/MenuEditorPage';
+import AdminHealthCheckPage from './pages/AdminHealthCheckPage';
 import StaffPinGuard from './components/StaffPinGuard';
 import GlobalEmergencyOverlay from './components/GlobalEmergencyOverlay';
 
@@ -103,6 +104,18 @@ export default function App() {
                 <StaffPinGuard roleTitle="Editor Menu">
                   <ModuleErrorBoundary moduleName="Editor Menu">
                     <MenuEditorPage />
+                  </ModuleErrorBoundary>
+                </StaffPinGuard>
+              }
+            />
+
+            {/* Health Check Dashboard */}
+            <Route
+              path="/admin/health"
+              element={
+                <StaffPinGuard roleTitle="Health Check">
+                  <ModuleErrorBoundary moduleName="Health Check">
+                    <AdminHealthCheckPage />
                   </ModuleErrorBoundary>
                 </StaffPinGuard>
               }

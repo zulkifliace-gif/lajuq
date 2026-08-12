@@ -80,6 +80,7 @@ export function OrderProvider({ children }) {
   const [tables, setTables] = useState(INITIAL_TABLES);
   const [sessions, setSessions] = useState({});
   const [orders, setOrders] = useState([]);
+  const [realtimeStatus, setRealtimeStatus] = useState({ orders: 'PENDING', sessions: 'PENDING', feedbacks: 'PENDING' });
 
   const sessionsRef = useRef(sessions);
   const ordersRef = useRef(orders);
@@ -313,6 +314,7 @@ export function OrderProvider({ children }) {
       fetchFeedbacksFromAPI(tenant.id);
 
       const handleRealtimeStatus = (channelName) => (status, err) => {
+        setRealtimeStatus(prev => ({ ...prev, [channelName]: status }));
         if (status === 'SUBSCRIBED') {
           console.log(`🟢 [REALTIME SUBSCRIBED] ${channelName}`);
         } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
@@ -443,6 +445,7 @@ export function OrderProvider({ children }) {
 
   // KDS Auth Health State & Auto-Refresh Controls
   const [isKdsAuthFailed, setIsKdsAuthFailed] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [healthLogs, setHealthLogs] = useState([]);
   const failedAuthAttemptsRef = useRef(0);
 
@@ -777,7 +780,11 @@ export function OrderProvider({ children }) {
         if (isCustomerPath) {
           const urlSession = urlParams.get('session') || urlParams.get('s');
           const localSession = localStorage.getItem('fb_customer_session_id');
-          const session_id = urlSession || localSession || 'GUEST';
+          let session_id = urlSession || localSession || 'GUEST';
+          
+          if (session_id && session_id !== 'GUEST' && !String(session_id).startsWith('SES-')) {
+            session_id = `SES-${session_id}`;
+          }
           
           const urlTenant = urlParams.get('tid');
           const tenant_id = urlTenant || localStorage.getItem('fb_tenant_id');
@@ -790,8 +797,9 @@ export function OrderProvider({ children }) {
           // Kosongkan token jika tidak sah
           token = token || '';
           
-          if (urlSession) localStorage.setItem('fb_customer_session_id', urlSession);
-          if (urlTenant) localStorage.setItem('fb_tenant_id', urlTenant);
+          // Update localStorage with NORMALIZED session_id
+          if (urlSession) localStorage.setItem('fb_customer_session_id', session_id);
+          if (urlTenant) localStorage.setItem('fb_tenant_id', tenant_id);
           if (token) localStorage.setItem('fb_customer_token', token);
 
           socketRef.current = io(`${BACKEND_URL}/customer`, {
@@ -817,14 +825,18 @@ export function OrderProvider({ children }) {
 
         socketRef.current.on('connect', () => {
           console.log(`🔌 Connected to Socket.io Namespace: ${isCustomerPath ? '/customer' : '/staff'}`);
+          setIsConnected(true);
           if (!isCustomerPath) {
             failedAuthAttemptsRef.current = 0;
             setIsKdsAuthFailed(false);
+            // 🚀 AUTOMATICALLY TRIGGER PING TO REFRESH LAST_PONG ON SERVER
+            socketRef.current.emit('SYNTHETIC_PING', {}, () => {});
           }
         });
 
         socketRef.current.on('disconnect', (reason) => {
           console.log('⚠️ Socket disconnected:', reason);
+          setIsConnected(false);
         });
 
         socketRef.current.on('connect_error', async (err) => {
@@ -893,22 +905,23 @@ export function OrderProvider({ children }) {
             if (state.tables && state.tables.length > 0) setTables(state.tables);
             if (state.sessions) setSessions(prev => ({ ...prev, ...state.sessions }));
             // CRITICAL FIX: Merge orders instead of replacing.
-            // Direct replacement causes a race condition where a newly submitted order
-            // (added to local state immediately) can disappear if the server's
-            // SYSTEM_STATE_UPDATED broadcast arrives before the DB insert completes.
             if (state.orders) setOrders(prev => {
               const map = new Map();
-              // Server state is authoritative for status updates (COOKING, READY, etc.)
-              // but we preserve any local-only orders not yet in server state
               prev.forEach(o => map.set(o.order_id, o));
               state.orders.forEach(o => map.set(o.order_id, o));
               return Array.from(map.values());
             });
-            // feedbacks TIDAK diambil dari Socket state — diuruskan 100% dari Supabase Cloud
             const st = state.receiptSettings || state.settings;
             if (st) {
               setReceiptSettings(prev => ({ ...prev, ...st }));
             }
+          }
+        });
+
+        // 🔄 KDS PING/PONG KEEPALIVE
+        socketRef.current.on('KDS_PING_TEST', (payload) => {
+          if (socketRef.current) {
+            socketRef.current.emit('KDS_PONG_RESPONSE', { pingId: payload?.pingId });
           }
         });
 
@@ -1956,6 +1969,7 @@ export function OrderProvider({ children }) {
       sessions,
       orders,
       feedbacks,
+      realtimeStatus,
       submitCustomerFeedback,
       menuItems,
       updateMenuItems,
@@ -2062,6 +2076,7 @@ export function OrderProvider({ children }) {
       resetDemoData,
       seedSampleDemo,
       isKdsAuthFailed,
+      isConnected,
       resetKdsAuthStatus,
       healthLogs,
       addHealthLogEvent

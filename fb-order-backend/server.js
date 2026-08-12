@@ -88,8 +88,10 @@ async function getSupabaseSystemState(tenantId) {
   const receiptSettings = {
     headerTitle: s.header_title || 'RESTORAN KAMI',
     headerAddress: s.header_address || '',
-    footerMsg: s.receipt_footer || 'Terima Kasih!',
+    receiptHeader: s.receipt_header || 'Selamat Datang!',
+    footerMsg: s.receipt_footer || 'Terima Kasih Atas Kunjungan Anda!',
     logoUrl: s.logo_url || null,
+    welcomeBannerUrl: s.welcome_banner_url || null,
     staffPin: s.staff_pin || '1234',
     paperWidth: s.paper_width || '58mm',
     tableCount: tableCount,
@@ -102,17 +104,19 @@ async function getSupabaseSystemState(tenantId) {
     takeawayChargeType: s.takeaway_charge_type || 'RM',
     takeawayChargeAmount: Number(s.takeaway_charge_amount || 0),
     enableCustomCharge: Boolean(s.enable_custom_charge),
-    customChargeName: s.custom_charge_name || '',
+    customChargeName: s.custom_charge_name || 'Cas Tambahan',
     customChargeType: s.custom_charge_type || 'RM',
     customChargeAmount: Number(s.custom_charge_amount || 0),
     customerMenuTemplate: s.customer_menu_template || 'modern',
+    customerMenuViewMode: s.customer_menu_view_mode || 'grid',
     kdsSound: s.kds_sound || 'DEFAULT',
     waveMode: s.wave_mode !== false,
     waveCapacity: Number(s.wave_capacity || 10),
     menuStock: s.menu_stock || {},
     telegramEnabled: Boolean(s.telegram_enabled),
     telegramBotToken: s.telegram_bot_token || '',
-    telegramChatId: s.telegram_chat_id || ''
+    telegramChatId: s.telegram_chat_id || '',
+    emergencyMode: s.emergency_mode || { enabled: false }
   };
   // Convert sessions array to map keyed by session_id
   const sessions = {};
@@ -1384,7 +1388,11 @@ staffNamespace.on('connection', (socket) => {
     }
     
     const tenantId = socket.data.tenantId;
-    const sessionId = payload.session_id;
+    const rawSessionId = payload.session_id;
+    const strSessionId = rawSessionId ? String(rawSessionId) : '';
+    const sessionId = (strSessionId && !strSessionId.startsWith('SES-') && strSessionId !== 'GUEST')
+      ? `SES-${strSessionId}`
+      : (strSessionId || 'GUEST');
     const { client_order_draft_id } = payload;
     
     // Idempotency Check
@@ -1404,7 +1412,9 @@ staffNamespace.on('connection', (socket) => {
     const { data: order, error } = await supabaseAdmin
       .from('orders')
       .insert({ 
+        order_id: payload.order_id || payload.client_order_draft_id || `ORD-${Date.now().toString().slice(-8)}`,
         tenant_id: tenantId, 
+        table_number: Number(payload.table_number || payload.tableNumber) || 0,
         session_id: sessionId, 
         items: payload.items,
         customer_name: payload.customerName || payload.customer_name || '',
@@ -1415,7 +1425,7 @@ staffNamespace.on('connection', (socket) => {
         special_instruction: payload.specialInstruction || payload.special_notes || null,
         kitchen_status: 'PENDING',
         payment_status: 'UNPAID',
-        client_order_draft_id: client_order_draft_id || payload.order_id || null // use order_id as fallback for idempotency
+        client_order_draft_id: client_order_draft_id || payload.order_id || null
       })
       .select()
       .single();
@@ -1591,12 +1601,17 @@ customerNamespace.use(async (socket, next) => {
     const { session_id, tenant_id, token } = socket.handshake.auth || {};
     if (!tenant_id) return next(new Error('missing_tenant_id'));
 
-    if (session_id) {
+    let normalizedSessionId = session_id ? String(session_id) : '';
+    if (normalizedSessionId && !normalizedSessionId.startsWith('SES-') && normalizedSessionId !== 'GUEST') {
+      normalizedSessionId = `SES-${normalizedSessionId}`;
+    }
+
+    if (normalizedSessionId && normalizedSessionId !== 'GUEST') {
       // Semak jadual sessions untuk sahkan token pelanggan
       const { data: sessionData } = await supabaseAdmin
         .from('sessions')
         .select('access_token')
-        .eq('session_id', session_id)
+        .eq('session_id', normalizedSessionId)
         .eq('tenant_id', tenant_id)
         .single();
         
@@ -1608,7 +1623,7 @@ customerNamespace.use(async (socket, next) => {
     }
 
     socket.data.tenantId = tenant_id;
-    socket.data.sessionId = session_id || 'GUEST';
+    socket.data.sessionId = normalizedSessionId || 'GUEST';
     next();
   } catch (err) {
     console.error('[customer auth] error', err);
@@ -1661,6 +1676,9 @@ customerNamespace.on('connection', (socket) => {
     });
 
   socket.on('SUBMIT_ORDER', safeHandler(async (payload, callback) => {
+    // In our system, frontend sends payload containing items, customerName, etc.
+    const tenantId = socket.data.tenantId || payload?.tenant_id;
+
     if (!checkRateLimit(socket.id)) {
       broadcastHealthLog(tenantId, 'WARN', 'SUBMIT_ORDER_FAILED', `Pesanan ditolak: Had Kekerapan (Rate Limited) [Socket: ${socket.id}]`, { reason: 'rate_limited', socket_id: socket.id });
       return callback && callback({ error: 'rate_limited' });
@@ -1675,13 +1693,12 @@ customerNamespace.on('connection', (socket) => {
       return callback && callback({ error: 'too_many_items' });
     }
     
-    // In our system, frontend sends payload containing items, customerName, etc.
-    const tenantId = socket.data.tenantId || payload?.tenant_id;
     // PREFER payload.session_id sent explicitly by submitOrder over stale socket.data.sessionId
     const rawSessionId = payload?.session_id || socket.data.sessionId;
-    const sessionId = (rawSessionId && typeof rawSessionId === 'string' && !rawSessionId.startsWith('SES-') && rawSessionId !== 'GUEST')
-      ? `SES-${rawSessionId}`
-      : (rawSessionId || 'GUEST');
+    const strSessionId = rawSessionId ? String(rawSessionId) : '';
+    const sessionId = (strSessionId && !strSessionId.startsWith('SES-') && strSessionId !== 'GUEST')
+      ? `SES-${strSessionId}`
+      : (strSessionId || 'GUEST');
 
     // Update socket data with normalized session ID
     socket.data.sessionId = sessionId;
@@ -1805,7 +1822,9 @@ customerNamespace.on('connection', (socket) => {
     const { data: order, error } = await supabaseAdmin
       .from('orders')
       .insert({ 
+        order_id: payload.order_id || payload.client_order_draft_id || `ORD-${Date.now().toString().slice(-8)}`,
         tenant_id: tenantId, 
+        table_number: Number(payload.table_number || payload.tableNumber) || 0,
         session_id: sessionId, 
         items: payload.items,
         customer_name: payload.customerName || payload.customer_name || '',
@@ -1963,6 +1982,12 @@ ${safeDesc}
     return res.status(500).json({ error: err.message });
   }
 });
+
+// Start Periodic Background Ping for Zombie Detection (Every 30 seconds)
+setInterval(() => {
+  const pingId = Date.now();
+  staffNamespace.emit('KDS_PING_TEST', { pingId });
+}, 30000);
 
 // Start Express HTTP + Socket.io Server
 server.listen(PORT, () => {

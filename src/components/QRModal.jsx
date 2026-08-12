@@ -165,7 +165,7 @@ export default function QRModal({ isOpen, onClose, tableNumber, sessionId }) {
           {/* STAFF DIRECT ORDER / WALK-IN BUTTON */}
           <button
             onClick={() => {
-              const url = `/order?table=${tableNumber}&session=${sessionId}&name=STAFFORDER`;
+              const url = `/order?table=${tableNumber}&session=${sessionId}&name=STAFFORDER${tid ? '&tid=' + tid : ''}${accessToken ? '&token=' + accessToken : ''}`;
               window.open(url, '_blank');
             }}
             className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-2xl text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-amber-500/20 active:scale-95 cursor-pointer mt-2"

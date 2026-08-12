@@ -418,7 +418,9 @@ export default function ReceiptModal({ isOpen, onClose, table, session, sessionO
         <div className="bg-slate-950 px-6 py-3 border-t border-slate-800/60">
           <button
             onClick={() => {
-              const url = `/order?table=${table.table_number}&session=${session.session_id}&name=STAFFORDER`;
+              const accessToken = session?.access_token || '';
+              const tid = localStorage.getItem('fb_tenant_id') || '';
+              const url = `/order?table=${table.table_number}&session=${session.session_id}&name=STAFFORDER${tid ? '&tid=' + tid : ''}${accessToken ? '&token=' + accessToken : ''}`;
               window.open(url, '_blank');
             }}
             className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-2xl text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-amber-500/20 active:scale-95 cursor-pointer"
