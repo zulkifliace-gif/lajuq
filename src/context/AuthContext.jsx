@@ -23,6 +23,7 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       if (session?.user) {
+        localStorage.removeItem('isDemoMode'); // EXIT DEMO MODE ON LOGIN
         fetchTenantProfile(session.user.id, session.user);
       } else {
         setTenant(null);
@@ -143,6 +144,7 @@ export function AuthProvider({ children }) {
     setUser(null);
     setTenant(null);
     localStorage.removeItem('fb_tenant_id');
+    localStorage.removeItem('isDemoMode');
   };
 
   return (
