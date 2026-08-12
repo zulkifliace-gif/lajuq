@@ -3,10 +3,11 @@ import { useOrder } from '../context/OrderContext';
 import { isDrinkItem } from '../utils/bluetoothPrinter';
 import KDSSettingsModal from '../components/KDSSettingsModal';
 import KDSStockModal from '../components/KDSStockModal';
+import SystemHealthModal from '../components/SystemHealthModal';
 import { 
   Utensils, Volume2, VolumeX, Flame, CheckCircle2, CheckSquare, 
   Clock, AlertTriangle, ArrowLeft, RefreshCw, Bell, ShieldCheck, Zap, Lock, XCircle, Printer, Bluetooth,
-  ArrowRight, Layers, Settings, Check, PackageCheck, Menu, X, ChevronRight, Coffee
+  ArrowRight, Layers, Settings, Check, PackageCheck, Menu, X, ChevronRight, Coffee, Activity
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -80,6 +81,7 @@ export default function KitchenPage() {
   const [audioBannerDismissed, setAudioBannerDismissed] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+  const [isHealthModalOpen, setIsHealthModalOpen] = useState(false);
 
   // Station Filter State: ALL (Semua) | FOOD (Dapur Utama) | BAR (Stesen Bar / Air)
   const [stationFilter, setStationFilter] = useState(() => {
@@ -511,6 +513,16 @@ export default function KitchenPage() {
           >
             {isAudioEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
             <span>{isAudioEnabled ? 'Audio' : 'Muted'}</span>
+          </button>
+
+          {/* Health Check Monitor Button */}
+          <button
+            onClick={() => setIsHealthModalOpen(true)}
+            className="px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 font-extrabold rounded-xl text-xs flex items-center gap-1.5 border border-emerald-500/40 transition cursor-pointer whitespace-nowrap shrink-0 shadow-md shadow-emerald-600/20"
+            title="Diagnostik Real-time KDS, Token, & Latensi Pipeline"
+          >
+            <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+            <span>Health Check</span>
           </button>
 
           {/* Stock Update Modal Button */}
@@ -1633,6 +1645,12 @@ export default function KitchenPage() {
       <KDSStockModal
         isOpen={isStockModalOpen}
         onClose={() => setIsStockModalOpen(false)}
+      />
+
+      {/* SYSTEM HEALTH DIAGNOSTICS MODAL */}
+      <SystemHealthModal
+        isOpen={isHealthModalOpen}
+        onClose={() => setIsHealthModalOpen(false)}
       />
 
     </div>

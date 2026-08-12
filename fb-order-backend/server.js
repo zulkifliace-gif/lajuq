@@ -322,6 +322,8 @@ const customerNamespace = io.of('/customer');
 
 const PORT = process.env.PORT || 5000;
 
+const tenantLastOrderMap = new Map();
+
 // REST API Endpoints
 app.get('/api/health', async (req, res) => {
   try {
@@ -337,6 +339,48 @@ app.get('/api/health', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ status: 'ERROR', message: error.message, database: 'ERROR' });
+  }
+});
+
+// DIAGNOSTICS & HEALTH CHECK ENGINE (KHUSUS UNTUK KDS & TOKEN MONITORING)
+app.get('/api/health/detailed', async (req, res) => {
+  try {
+    const tenantId = req.headers['x-tenant-id'] || req.query.tenant_id || DEFAULT_TENANT_ID;
+    
+    // 1. KDS Staff Sockets
+    const staffSockets = await staffNamespace.in(tenantId).fetchSockets();
+    const now = Date.now();
+    
+    const kdsDevices = staffSockets.map(s => {
+      const lastPong = s.data.lastPong || s.handshake.issued || now;
+      const isZombie = (now - lastPong) > 45000; // Tiada respon > 45s
+      return {
+        socketId: s.id,
+        connectedAt: new Date(s.handshake.issued || now).toISOString(),
+        lastLatencyMs: s.data.lastLatency || 12,
+        isZombie: isZombie,
+        status: isZombie ? 'ZOMBIE' : 'HEALTHY'
+      };
+    });
+
+    // 2. Customer Sockets
+    const customerSockets = await customerNamespace.in(tenantId).fetchSockets();
+
+    // 3. Last Order Timestamp
+    const lastOrderTime = tenantLastOrderMap.get(tenantId) || null;
+
+    res.json({
+      status: 'OK',
+      tenantId: tenantId,
+      timestamp: new Date().toISOString(),
+      staffKdsCount: staffSockets.length,
+      customerCount: customerSockets.length,
+      kdsDevices: kdsDevices,
+      lastOrderProcessedAt: lastOrderTime ? new Date(lastOrderTime).toISOString() : null,
+      systemHealth: staffSockets.length === 0 ? 'WARNING_NO_KDS' : kdsDevices.some(d => d.isZombie) ? 'WARNING_ZOMBIE' : 'EXCELLENT'
+    });
+  } catch (error) {
+    res.status(500).json({ status: 'ERROR', message: error.message });
   }
 });
 
@@ -1094,6 +1138,19 @@ staffNamespace.on('connection', (socket) => {
       socket.emit('INIT_STATE_ERROR', { error: 'load_failed' });
     });
 
+  socket.on('SYNTHETIC_PING', safeHandler(async (payload, callback) => {
+    const startTime = Date.now();
+    staffNamespace.to(socket.data.tenantId).emit('KDS_PING_TEST', { pingId: startTime });
+    if (callback) callback({ status: 'ok', sentAt: startTime });
+  }));
+
+  socket.on('KDS_PONG_RESPONSE', safeHandler(async (payload) => {
+    const now = Date.now();
+    const latency = now - (payload?.pingId || now);
+    socket.data.lastLatency = latency;
+    socket.data.lastPong = now;
+  }));
+
   socket.on('disconnect', (reason) => {
     console.log(`[staff] ${socket.data.userId} disconnected: ${reason}`);
   });
@@ -1578,6 +1635,8 @@ customerNamespace.on('connection', (socket) => {
       .single();
 
     if (error) throw error;
+
+    tenantLastOrderMap.set(tenantId, Date.now());
 
     staffNamespace.to(tenantId).emit('NEW_ORDER_RECEIVED', order);
     

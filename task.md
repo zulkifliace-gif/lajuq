@@ -1,0 +1,3 @@
+- [x] Update `server.js` to inject the specific closed session into `INIT_STATE` for connecting customers.
+- [x] Add security check in `SUBMIT_ORDER` event inside `server.js` to ensure the session is `ACTIVE`.
+- [x] Verify that closed sessions trigger the "Sesi Dibatalkan" UI on the customer end.

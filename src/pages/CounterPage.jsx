@@ -5,8 +5,9 @@ import ReceiptModal from '../components/ReceiptModal';
 import ReceiptSettingsModal from '../components/ReceiptSettingsModal';
 import EmergencyModeModal from '../components/EmergencyModeModal';
 import TechnicalSupportModal from '../components/TechnicalSupportModal';
+import SystemHealthModal from '../components/SystemHealthModal';
 import { calculateReceiptTotals } from '../utils/receiptCalculator';
-import { Monitor, QrCode, CreditCard, RefreshCw, Filter, Utensils, CheckCircle2, AlertCircle, ArrowLeft, ExternalLink, Bluetooth, Printer, Loader2, XCircle, Settings, Lock, Search, AlertOctagon, Menu, X, ChevronRight, Headphones } from 'lucide-react';
+import { Monitor, QrCode, CreditCard, RefreshCw, Filter, Utensils, CheckCircle2, AlertCircle, ArrowLeft, ExternalLink, Bluetooth, Printer, Loader2, XCircle, Settings, Lock, Search, AlertOctagon, Menu, X, ChevronRight, Headphones, Activity } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 // Safe helper to parse items array
@@ -34,6 +35,7 @@ export default function CounterPage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
+  const [isHealthModalOpen, setIsHealthModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Double-submit guard: prevent cashier from pressing 'Sahkan Bayaran' twice
@@ -243,6 +245,16 @@ export default function CounterPage() {
           >
             <AlertOctagon className="w-3.5 h-3.5" />
             <span>{receiptSettings?.emergencyMode?.enabled ? 'Mod Kecemasan: Aktif' : 'Mod Kecemasan'}</span>
+          </button>
+
+          {/* Health Check Monitor Button */}
+          <button
+            onClick={() => setIsHealthModalOpen(true)}
+            className="px-3 py-2 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 font-extrabold rounded-xl text-xs flex items-center gap-1.5 border border-emerald-500/40 transition cursor-pointer whitespace-nowrap shrink-0 shadow-md shadow-emerald-600/20"
+            title="Diagnostik Real-time KDS, Token, & Latensi Pipeline"
+          >
+            <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+            <span>Health Check</span>
           </button>
 
           {/* Technical Support Headset Button */}
@@ -719,6 +731,12 @@ export default function CounterPage() {
       <TechnicalSupportModal
         isOpen={isSupportModalOpen}
         onClose={() => setIsSupportModalOpen(false)}
+      />
+
+      {/* SYSTEM HEALTH DIAGNOSTICS MODAL */}
+      <SystemHealthModal
+        isOpen={isHealthModalOpen}
+        onClose={() => setIsHealthModalOpen(false)}
       />
 
     </div>
