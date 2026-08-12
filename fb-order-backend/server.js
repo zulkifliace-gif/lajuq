@@ -808,6 +808,49 @@ ${commentStr}
   }
 }
 
+// Helper: Hantar Amaran Keselamatan / Disconnection terus ke Telegram Kedai
+async function sendTelegramAlertMessage(tenantId, alertTitle, alertMessage) {
+  try {
+    if (!tenantId) return false;
+    const { data: s } = await supabaseAdmin
+      .from('tenant_settings')
+      .select('telegram_enabled, telegram_bot_token, telegram_chat_id')
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+
+    if (!s || !s.telegram_enabled || !s.telegram_bot_token || !s.telegram_chat_id) {
+      return false;
+    }
+
+    const token = String(s.telegram_bot_token).trim().replace(/^bot/i, '');
+    const chatId = String(s.telegram_chat_id).trim();
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('ms-MY', { timeZone: 'Asia/Kuala_Lumpur' });
+    const timeStr = now.toLocaleTimeString('ms-MY', { timeZone: 'Asia/Kuala_Lumpur', hour: '2-digit', minute: '2-digit' });
+
+    const htmlMsg = 
+`🚨 <b>[AMARAN LAJUQ] ${escapeTelegramHtml(alertTitle)}</b>
+━━━━━━━━━━━━━━━━━━
+<b>Masa:</b> 📅 ${dateStr}, ${timeStr}
+<b>Tenant ID:</b> <code>${escapeTelegramHtml(tenantId)}</code>
+
+<b>Maklumat Ralat:</b>
+${escapeTelegramHtml(alertMessage)}
+
+⚠️ <i>Sila semak peranti tablet dapur (KDS) dan pastikan sambungan internet & token staf aktif.</i>`;
+
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: htmlMsg, parse_mode: 'HTML' })
+    });
+    return true;
+  } catch (err) {
+    console.warn('⚠️ Telegram Alert Error:', err.message);
+    return false;
+  }
+}
+
 // PUBLIC UNPROTECTED FEEDBACK SUBMISSION & FETCH HANDLERS (PURE CLOUD SUPABASE)
 const handlePublicFeedbackSubmission = async (req, res) => {
   try {
@@ -1102,7 +1145,11 @@ staffNamespace.use(async (socket, next) => {
     if (!token) return next(new Error('unauthenticated'));
 
     const { data: userData, error } = await supabaseAdmin.auth.getUser(token);
-    if (error || !userData?.user) return next(new Error('invalid_token'));
+    if (error || !userData?.user) {
+      const _tid = socket.handshake.auth?.tenant_id || socket.handshake.headers['x-tenant-id'] || DEFAULT_TENANT_ID;
+      sendTelegramAlertMessage(_tid, 'KDS Auth Token Terbatal / Luput', `Sambungan Socket KDS ditolak oleh pelayan: ${error?.message || 'invalid_token'}. Tablet KDS mungkin terputus.`);
+      return next(new Error('invalid_token'));
+    }
 
     // Cari tenant berdasarkan owner_id (jadual staff_profiles tidak wujud — guna tenants.owner_id)
     const { data: tenant, error: tenantErr } = await supabaseAdmin

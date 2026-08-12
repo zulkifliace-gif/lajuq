@@ -41,7 +41,7 @@ export default function KitchenPage() {
     btDevice, kitchenBtDevice, kitchenBtConnecting, 
     connectKitchenBluetooth, disconnectKitchenBluetooth, receiptSettings, updateReceiptSettings,
     failedPrintOrderIds = {}, manualPrintOrder, markStationCooking, markStationItemsDone,
-    playBeepSound
+    playBeepSound, isKdsAuthFailed, resetKdsAuthStatus
   } = useOrder();
 
   // Track previous order count / new order IDs to play sound ONLY in Kitchen Display System (KDS)
@@ -396,6 +396,39 @@ export default function KitchenPage() {
         <div className="fixed top-20 right-4 sm:right-6 z-50 bg-rose-600 text-white font-extrabold px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl shadow-2xl border border-rose-400 flex items-center gap-3 text-xs animate-bounce max-w-xs sm:max-w-md">
           <AlertTriangle className="w-5 h-5 shrink-0" />
           <span>{printErrorMsg}</span>
+        </div>
+      )}
+
+      {/* FULL-SCREEN OVERLAY: KDS AUTH REJECTION / EXPIRED TOKEN WARNING */}
+      {isKdsAuthFailed && (
+        <div className="fixed inset-0 z-50 bg-rose-950/95 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-center text-white animate-fadeIn">
+          <div className="bg-rose-900/90 border-2 border-rose-500 rounded-3xl p-8 max-w-lg w-full shadow-2xl space-y-6 animate-pulse">
+            <div className="h-20 w-20 bg-rose-500/30 border border-rose-400 text-rose-300 rounded-3xl flex items-center justify-center mx-auto text-4xl shadow-xl">
+              <AlertTriangle className="w-10 h-10" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-black tracking-tight text-white uppercase">
+                🚨 Sambungan Dapur Terputus!
+              </h2>
+              <p className="text-sm text-rose-200 leading-relaxed font-medium">
+                Token pengesahan Staf pada peranti KDS ini telah luput atau sambungan Socket telah ditolak selepas 3 percubaan automatik.
+              </p>
+            </div>
+            <div className="bg-rose-950/80 border border-rose-700/60 p-4 rounded-2xl text-xs text-rose-300 text-left space-y-1 font-mono">
+              <p>• Status: <strong>SOCKET_AUTH_REJECTED (401)</strong></p>
+              <p>• Tindakan: Sila tekan butang di bawah untuk menyegarkan sesi secara manual.</p>
+            </div>
+            <button
+              onClick={async () => {
+                if (resetKdsAuthStatus) await resetKdsAuthStatus();
+                window.location.reload();
+              }}
+              className="w-full py-4 px-6 bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-rose-900/50 transition cursor-pointer active:scale-95 flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-5 h-5 animate-spin" />
+              <span>🔄 Segarkan Sesi & Sambung Semula KDS</span>
+            </button>
+          </div>
         </div>
       )}
 

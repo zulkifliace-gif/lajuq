@@ -768,16 +768,59 @@ export function OrderProvider({ children }) {
           });
         }
 
+  const [isKdsAuthFailed, setIsKdsAuthFailed] = useState(false);
+  const failedAuthAttemptsRef = useRef(0);
+
+  const resetKdsAuthStatus = async () => {
+    setIsKdsAuthFailed(false);
+    failedAuthAttemptsRef.current = 0;
+    try {
+      const { data: { session } } = await supabase.auth.refreshSession();
+      if (socketRef.current) {
+        socketRef.current.connect();
+      }
+      return session;
+    } catch (e) {
+      console.error('resetKdsAuthStatus error:', e);
+    }
+  };
+
         socketRef.current.on('connect', () => {
           console.log(`🔌 Connected to Socket.io Namespace: ${isCustomerPath ? '/customer' : '/staff'}`);
+          if (!isCustomerPath) {
+            failedAuthAttemptsRef.current = 0;
+            setIsKdsAuthFailed(false);
+          }
         });
 
         socketRef.current.on('disconnect', (reason) => {
           console.log('⚠️ Socket disconnected:', reason);
         });
 
-        socketRef.current.on('connect_error', (err) => {
+        socketRef.current.on('connect_error', async (err) => {
           console.error('❌ Socket connect_error:', err.message, err.data);
+          const errMsg = String(err?.message || '').toLowerCase();
+          if (!isCustomerPath && (errMsg.includes('invalid_token') || errMsg.includes('unauthenticated') || errMsg.includes('not_staff'))) {
+            failedAuthAttemptsRef.current += 1;
+            console.warn(`⚠️ KDS Socket Auth Error (Attempt ${failedAuthAttemptsRef.current}/3):`, err.message);
+            
+            if (failedAuthAttemptsRef.current <= 3) {
+              console.log('🔄 Auto force-refreshing Supabase session...');
+              try {
+                const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+                if (!refreshErr && refreshData?.session) {
+                  console.log('✅ Supabase session refreshed! Retrying socket connect...');
+                  if (socketRef.current) socketRef.current.connect();
+                  return;
+                }
+              } catch (e) {
+                console.error('Auto-refresh exception:', e);
+              }
+            } else {
+              console.error('🚨 KDS Auth failed after 3 auto-refresh attempts!');
+              setIsKdsAuthFailed(true);
+            }
+          }
         });
 
         socketRef.current.on('INIT_STATE', (state) => {
@@ -1965,7 +2008,9 @@ export function OrderProvider({ children }) {
       handleBtConnectSuccess,
       handleBtConnectFailure,
       resetDemoData,
-      seedSampleDemo
+      seedSampleDemo,
+      isKdsAuthFailed,
+      resetKdsAuthStatus
     }}>
       {children}
     </OrderContext.Provider>
