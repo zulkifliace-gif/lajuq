@@ -329,16 +329,59 @@ app.get('/api/health', async (req, res) => {
   try {
     const tenantId = req.headers['x-tenant-id'] || req.query.tenant_id || DEFAULT_TENANT_ID;
     const settings = await getSupabaseSettings(tenantId);
+    const memUsage = process.memoryUsage();
+
     res.json({
       status: 'OK',
       message: 'F&B Order Backend Server is Running! (Supabase Cloud)',
       timestamp: new Date().toISOString(),
       database: 'SUPABASE_CLOUD',
       operationalMode: settings.operationalMode || 'POSTPAY',
-      emergencyMode: settings.emergencyMode?.enabled || false
+      emergencyMode: settings.emergencyMode?.enabled || false,
+      processUptimeSeconds: Math.floor(process.uptime()),
+      heapMemoryUsedMb: Math.round(memUsage.heapUsed / 1024 / 1024),
+      rssMemoryUsedMb: Math.round(memUsage.rss / 1024 / 1024),
+      pm2ProcessId: process.env.pm_id || 'STANDALONE'
     });
   } catch (error) {
     res.status(500).json({ status: 'ERROR', message: error.message, database: 'ERROR' });
+  }
+});
+
+// DEDICATED SUPABASE LIGHTWEIGHT DB PING ENDPOINT
+app.get('/api/db/ping', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    // Ultra-lightweight HEAD count query (0 byte payload)
+    const { error } = await supabaseAdmin
+      .from('tenants')
+      .select('count', { count: 'exact', head: true });
+
+    const latencyMs = Date.now() - startTime;
+    if (error) {
+      return res.status(500).json({
+        status: 'ERROR',
+        isDbReachable: false,
+        latencyMs,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json({
+      status: 'OK',
+      isDbReachable: true,
+      latencyMs,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'ERROR',
+      isDbReachable: false,
+      latencyMs: Date.now() - startTime,
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
@@ -1231,6 +1274,16 @@ staffNamespace.on('connection', (socket) => {
     const latency = now - (payload?.pingId || now);
     socket.data.lastLatency = latency;
     socket.data.lastPong = now;
+  }));
+
+  socket.on('KDS_ACK_ORDER_RECEIVED', safeHandler(async (payload) => {
+    console.log(`✅ [KDS ACK CONFIRMED] Pesanan #${payload?.order_id} sah diterima oleh KDS (Socket ${socket.id})`);
+    const _tid = payload?.tenant_id || socket.data.tenantId;
+    broadcastHealthLog(_tid, 'INFO', 'KDS_ORDER_ACK', `KDS sah menerima & memaparkan pesanan #${payload?.order_id || 'N/A'}`, {
+      order_id: payload?.order_id,
+      socket_id: socket.id,
+      received_at: payload?.received_at || new Date().toISOString()
+    });
   }));
 
   socket.on('disconnect', (reason) => {

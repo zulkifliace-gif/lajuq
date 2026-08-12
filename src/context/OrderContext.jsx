@@ -312,6 +312,20 @@ export function OrderProvider({ children }) {
       // 5. Fetch Tenant Feedbacks — guna fungsi tunggal fetchFeedbacksFromAPI (tidak berganda)
       fetchFeedbacksFromAPI(tenant.id);
 
+      const handleRealtimeStatus = (channelName) => (status, err) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`🟢 [REALTIME SUBSCRIBED] ${channelName}`);
+        } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+          console.warn(`⚠️ [REALTIME ERROR] ${channelName}: ${status}`, err?.message || '');
+          addHealthLogEvent({
+            level: 'WARN',
+            eventType: 'SUPABASE_REALTIME_ERROR',
+            message: `Saluran Sandaran Supabase (${channelName}) Terputus: ${status}`,
+            details: { channel: channelName, status, error: err?.message }
+          });
+        }
+      };
+
       // 6. SUPABASE REALTIME CHANNELS FOR POS <-> KITCHEN <-> FEEDBACK LIVE SYNC
       const realtimeOrdersChannel = supabase
         .channel(`tenant_orders_${tenant.id}`)
@@ -335,7 +349,7 @@ export function OrderProvider({ children }) {
               });
           }
         )
-        .subscribe();
+        .subscribe(handleRealtimeStatus('orders'));
 
       const realtimeSessionsChannel = supabase
         .channel(`tenant_sessions_${tenant.id}`)
@@ -360,7 +374,7 @@ export function OrderProvider({ children }) {
               });
           }
         )
-        .subscribe();
+        .subscribe(handleRealtimeStatus('sessions'));
 
       const realtimeFeedbacksChannel = supabase
         .channel(`tenant_feedbacks_${tenant.id}`)
@@ -372,7 +386,7 @@ export function OrderProvider({ children }) {
             fetchFeedbacksFromAPI(tenant.id);
           }
         )
-        .subscribe();
+        .subscribe(handleRealtimeStatus('feedbacks'));
 
       const realtimeMenuChannel = supabase
         .channel(`tenant_menu_${tenant.id}`)
@@ -924,8 +938,15 @@ export function OrderProvider({ children }) {
           }
         });
 
-        socketRef.current.on('NEW_ORDER_RECEIVED', () => {
-          // Socket event received
+        socketRef.current.on('NEW_ORDER_RECEIVED', (orderData) => {
+          console.log('⚡ Socket Received NEW_ORDER_RECEIVED:', orderData);
+          if (socketRef.current && orderData?.order_id) {
+            socketRef.current.emit('KDS_ACK_ORDER_RECEIVED', {
+              order_id: orderData.order_id,
+              tenant_id: orderData.tenant_id || tenantRef.current?.id,
+              received_at: new Date().toISOString()
+            });
+          }
         });
 
         socketRef.current.on('MENU_UPDATED', (updatedMenu) => {
