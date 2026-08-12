@@ -1622,9 +1622,20 @@ customerNamespace.on('connection', (socket) => {
 
   getSupabaseSystemState(socket.data.tenantId)
     .then(async (state) => {
+      // Guard Check: Sahkan struktur state dan sessions
+      if (!state || typeof state !== 'object' || !state.sessions || typeof state.sessions !== 'object') {
+        console.error('🚨 [CRITICAL ERROR] sessions state corrupted!', state);
+        broadcastHealthLog(socket.data.tenantId, 'ERROR', 'SYSTEM_STATE_CORRUPTED', 'Struktur sessions state tidak sah (sessions state corrupted)');
+        throw new Error('sessions state corrupted');
+      }
+
       // TUGASAN A: Inject spesifik sesi yang CLOSED supaya UI pelanggan boleh paparkan popup "Sesi Dibatalkan"
       if (socket.data.sessionId && socket.data.sessionId !== 'GUEST') {
-        const sessionExists = state.sessions.some(s => s.session_id === socket.data.sessionId);
+        const isArray = Array.isArray(state.sessions);
+        const sessionExists = isArray
+          ? state.sessions.some(s => s.session_id === socket.data.sessionId)
+          : Boolean(state.sessions[socket.data.sessionId]);
+
         if (!sessionExists) {
           const { data: specificSession } = await supabaseAdmin
             .from('sessions')
@@ -1634,7 +1645,11 @@ customerNamespace.on('connection', (socket) => {
             .single();
             
           if (specificSession) {
-            state.sessions.push(specificSession);
+            if (isArray) {
+              state.sessions.push(specificSession);
+            } else {
+              state.sessions[specificSession.session_id] = specificSession;
+            }
           }
         }
       }
@@ -1642,7 +1657,7 @@ customerNamespace.on('connection', (socket) => {
     })
     .catch((err) => {
       console.error('[customer INIT_STATE] error', err);
-      socket.emit('INIT_STATE_ERROR', { error: 'load_failed' });
+      socket.emit('INIT_STATE_ERROR', { error: err.message || 'load_failed' });
     });
 
   socket.on('SUBMIT_ORDER', safeHandler(async (payload, callback) => {
