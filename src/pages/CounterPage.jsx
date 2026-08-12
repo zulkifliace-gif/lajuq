@@ -137,14 +137,14 @@ export default function CounterPage() {
   const handleConfirmPayment = async (sessionId, tableNumber) => {
     if (isConfirmingPayment) return; // Prevent double-submit
     setIsConfirmingPayment(true);
+    // Close modal immediately so cashier can't press twice
+    setSelectedTableForBilling(null);
     try {
       await completePayment(sessionId, tableNumber);
-      setSelectedTableForBilling(null);
     } catch (err) {
       alert(`Ralat pembayaran: ${err.message}`);
     } finally {
-      // Release guard after short delay to allow state to settle
-      setTimeout(() => setIsConfirmingPayment(false), 2000);
+      setTimeout(() => setIsConfirmingPayment(false), 1500);
     }
   };
 
@@ -626,7 +626,8 @@ export default function CounterPage() {
                       {hasPrepayPending ? '💳 PRE-PAY BAYARAN' : isKosong ? 'KOSONG' : isAdaPelanggan ? 'ADA PELANGGAN' : 'SEDANG MAKAN'}
                     </span>
 
-                    {activeSession && (
+                    {/* QR icon: show if there is an active session OR table is occupied (handles sync lag) */}
+                    {(activeSession || (!isKosong && table.current_session_id)) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
