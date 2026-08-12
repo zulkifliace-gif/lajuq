@@ -43,17 +43,30 @@ function sanitizeInput(str) {
 // Helper: Dapatkan keseluruhan system state dari Supabase (gantikan getSystemState SQLite)
 async function getSupabaseSystemState(tenantId) {
   const tid = tenantId || DEFAULT_TENANT_ID;
-  const [tablesRes, sessionsRes, ordersRes, settingsRes] = await Promise.all([
+  const [tablesRes, sessionsRes, ordersRes, settingsRes, menuItemsRes] = await Promise.all([
     supabaseAdmin.from('tables').select('*').eq('tenant_id', tid).order('table_number'),
     supabaseAdmin.from('sessions').select('*').eq('tenant_id', tid).eq('status','ACTIVE').order('created_at', { ascending: false }),
     supabaseAdmin.from('orders').select('*').eq('tenant_id', tid).neq('payment_status','PAID').order('created_at'),
-    supabaseAdmin.from('tenant_settings').select('*').eq('tenant_id', tid).maybeSingle()
+    supabaseAdmin.from('tenant_settings').select('*').eq('tenant_id', tid).maybeSingle(),
+    supabaseAdmin.from('menu_items').select('*').eq('tenant_id', tid).order('sort_order', { ascending: true })
   ]);
   const dbTables = tablesRes.data || [];
   const sessionsArr = sessionsRes.data || [];
   const orders = (ordersRes.data || []).map(o => ({ ...o, items: Array.isArray(o.items) ? o.items : [] }));
   const s = settingsRes.data || {};
   const tableCount = s.table_count ? Number(s.table_count) : 20;
+
+  const menuItems = (menuItemsRes.data || []).map(row => ({
+    id: row.id,
+    name: row.name,
+    category: row.category_name,
+    price: Number(row.price),
+    description: row.description || '',
+    image: row.image_url || '',
+    isActive: row.is_active !== false,
+    sortOrder: row.sort_order || 0,
+    optionGroups: Array.isArray(row.option_groups) ? row.option_groups : []
+  }));
 
   // Bina senarai penuh meja dari 1 hingga tableCount supaya grid meja sentiasa lengkap
   const tablesMap = new Map();
@@ -92,6 +105,7 @@ async function getSupabaseSystemState(tenantId) {
     customChargeName: s.custom_charge_name || '',
     customChargeType: s.custom_charge_type || 'RM',
     customChargeAmount: Number(s.custom_charge_amount || 0),
+    customerMenuTemplate: s.customer_menu_template || 'modern',
     kdsSound: s.kds_sound || 'DEFAULT',
     waveMode: s.wave_mode !== false,
     waveCapacity: Number(s.wave_capacity || 10),
@@ -103,7 +117,7 @@ async function getSupabaseSystemState(tenantId) {
   // Convert sessions array to map keyed by session_id
   const sessions = {};
   sessionsArr.forEach(sess => { sessions[sess.session_id] = sess; });
-  return { tables, sessions, orders, feedbacks: [], receiptSettings, settings: receiptSettings };
+  return { tables, sessions, orders, menuItems, feedbacks: [], receiptSettings, settings: receiptSettings };
 }
 
 // Helper: Dapatkan settings dari Supabase

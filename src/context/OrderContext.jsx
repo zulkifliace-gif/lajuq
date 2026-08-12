@@ -168,6 +168,35 @@ export function OrderProvider({ children }) {
   }, [tenant?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
+  // CUSTOMER MENU FETCH FALLBACK (Apabila pengguna tidak logged in sebagai staf)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const activeTenantId = urlParams.get('tid') || localStorage.getItem('fb_tenant_id');
+    if (activeTenantId) {
+      supabase
+        .from('menu_items')
+        .select('*')
+        .eq('tenant_id', activeTenantId)
+        .order('sort_order', { ascending: true })
+        .then(({ data, error }) => {
+          if (!error && Array.isArray(data) && data.length > 0) {
+            const mapped = data.map(row => ({
+              id: row.id,
+              name: row.name,
+              category: row.category_name,
+              price: Number(row.price),
+              description: row.description || '',
+              image: row.image_url || '',
+              isActive: row.is_active !== false,
+              sortOrder: row.sort_order || 0,
+              optionGroups: Array.isArray(row.option_groups) ? row.option_groups : []
+            }));
+            setMenuItems(mapped);
+          }
+        });
+    }
+  }, []);
+
   // STRICT SUPABASE DATA SCOPING & REALTIME SYNC FOR LOGGED IN RESTAURANTS
   useEffect(() => {
     if (user && tenant && tenant.id) {
@@ -754,8 +783,8 @@ export function OrderProvider({ children }) {
         socketRef.current.on('INIT_STATE', (state) => {
           if (state) {
             if (state.tables && state.tables.length > 0) setTables(state.tables);
-            // Merge sessions (server is authoritative on INIT, but preserve any local sessions not yet in server)
             if (state.sessions) setSessions(prev => ({ ...prev, ...state.sessions }));
+            if (state.menuItems && Array.isArray(state.menuItems)) setMenuItems(state.menuItems);
             // Merge incoming orders with local orders (server is authoritative on INIT)
             if (state.orders) setOrders(prev => {
               const map = new Map();
@@ -774,11 +803,6 @@ export function OrderProvider({ children }) {
         socketRef.current.on('SYSTEM_STATE_UPDATED', (state) => {
           if (state) {
             if (state.tables && state.tables.length > 0) setTables(state.tables);
-            // CRITICAL FIX: Merge sessions instead of replacing.
-            // A newly created session (in local state) can be wiped if SYSTEM_STATE_UPDATED
-            // arrives before the server's SQLite insert completes.
-            // Merge strategy: server entries override local for same key (status updates),
-            // but local-only sessions (not yet in server) are preserved.
             if (state.sessions) setSessions(prev => ({ ...prev, ...state.sessions }));
             // CRITICAL FIX: Merge orders instead of replacing.
             // Direct replacement causes a race condition where a newly submitted order
