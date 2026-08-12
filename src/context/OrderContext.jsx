@@ -429,7 +429,22 @@ export function OrderProvider({ children }) {
 
   // KDS Auth Health State & Auto-Refresh Controls
   const [isKdsAuthFailed, setIsKdsAuthFailed] = useState(false);
+  const [healthLogs, setHealthLogs] = useState([]);
   const failedAuthAttemptsRef = useRef(0);
+
+  const addHealthLogEvent = useCallback((eventPayload) => {
+    setHealthLogs(prev => {
+      const entry = {
+        id: eventPayload?.id || crypto.randomUUID(),
+        timestamp: eventPayload?.timestamp || new Date().toISOString(),
+        level: eventPayload?.level || 'INFO',
+        eventType: eventPayload?.eventType || 'SYSTEM_EVENT',
+        message: eventPayload?.message || String(eventPayload),
+        details: eventPayload?.details || {}
+      };
+      return [entry, ...prev.slice(0, 49)];
+    });
+  }, []);
 
   const resetKdsAuthStatus = useCallback(async () => {
     setIsKdsAuthFailed(false);
@@ -801,6 +816,16 @@ export function OrderProvider({ children }) {
         socketRef.current.on('connect_error', async (err) => {
           console.error('❌ Socket connect_error:', err.message, err.data);
           const errMsg = String(err?.message || '').toLowerCase();
+          
+          addHealthLogEvent({
+            id: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+            level: 'ERROR',
+            eventType: 'SOCKET_CONNECT_ERROR',
+            message: `Sambungan Socket Gagal: ${err?.message || 'connect_error'}`,
+            details: { error: err?.message, data: err?.data }
+          });
+
           if (!isCustomerPath && (errMsg.includes('invalid_token') || errMsg.includes('unauthenticated') || errMsg.includes('not_staff'))) {
             failedAuthAttemptsRef.current += 1;
             console.warn(`⚠️ KDS Socket Auth Error (Attempt ${failedAuthAttemptsRef.current}/3):`, err.message);
@@ -822,6 +847,11 @@ export function OrderProvider({ children }) {
               setIsKdsAuthFailed(true);
             }
           }
+        });
+
+        socketRef.current.on('HEALTH_LOG_EVENT', (logPayload) => {
+          console.log('📡 [LIVE HEALTH LOG]', logPayload);
+          addHealthLogEvent(logPayload);
         });
 
         socketRef.current.on('INIT_STATE', (state) => {
@@ -2011,7 +2041,9 @@ export function OrderProvider({ children }) {
       resetDemoData,
       seedSampleDemo,
       isKdsAuthFailed,
-      resetKdsAuthStatus
+      resetKdsAuthStatus,
+      healthLogs,
+      addHealthLogEvent
     }}>
       {children}
     </OrderContext.Provider>

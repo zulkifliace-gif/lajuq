@@ -1136,17 +1136,46 @@ function checkRateLimit(socketId, maxPerMinute = 10) {
   return true;
 }
 
-// --- STAFF NAMESPACE ---
+// Helper: Siarkan Log Kesihatan Real-time via Socket.io 'HEALTH_LOG_EVENT'
+function broadcastHealthLog(tenantId, level, eventType, message, details = {}) {
+  try {
+    const _tid = tenantId || DEFAULT_TENANT_ID;
+    const payload = {
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      tenant_id: _tid,
+      level, // 'ERROR' | 'WARN' | 'INFO'
+      eventType, // 'SUBMIT_ORDER_FAILED' | 'SOCKET_AUTH_REJECTED' | 'KDS_DISCONNECTED' | 'KDS_CONNECTED'
+      message,
+      details
+    };
+    if (staffNamespace) {
+      staffNamespace.to(_tid).emit('HEALTH_LOG_EVENT', payload);
+    }
+    if (customerNamespace) {
+      customerNamespace.to(_tid).emit('HEALTH_LOG_EVENT', payload);
+    }
+    console.log(`📡 [HEALTH_LOG_EVENT] [${level}] ${eventType}:`, message);
+  } catch (err) {
+    console.warn('⚠️ Error broadcasting health log:', err.message);
+  }
+}
 
+// --- STAFF NAMESPACE ---
 
 staffNamespace.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth?.token;
-    if (!token) return next(new Error('unauthenticated'));
+    if (!token) {
+      const _tid = socket.handshake.auth?.tenant_id || socket.handshake.headers['x-tenant-id'] || DEFAULT_TENANT_ID;
+      broadcastHealthLog(_tid, 'ERROR', 'SOCKET_AUTH_REJECTED', 'Sambungan KDS ditolak: Tiada Token (unauthenticated)', { reason: 'unauthenticated' });
+      return next(new Error('unauthenticated'));
+    }
 
     const { data: userData, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !userData?.user) {
       const _tid = socket.handshake.auth?.tenant_id || socket.handshake.headers['x-tenant-id'] || DEFAULT_TENANT_ID;
+      broadcastHealthLog(_tid, 'ERROR', 'SOCKET_AUTH_REJECTED', `Sambungan KDS ditolak: Token Tidak Sah (${error?.message || 'invalid_token'})`, { reason: error?.message || 'invalid_token' });
       sendTelegramAlertMessage(_tid, 'KDS Auth Token Terbatal / Luput', `Sambungan Socket KDS ditolak oleh pelayan: ${error?.message || 'invalid_token'}. Tablet KDS mungkin terputus.`);
       return next(new Error('invalid_token'));
     }
@@ -1160,6 +1189,7 @@ staffNamespace.use(async (socket, next) => {
 
     if (tenantErr || !tenant) {
       console.error('[staff auth] user not owner of any tenant:', userData.user.id, tenantErr?.message);
+      broadcastHealthLog(DEFAULT_TENANT_ID, 'ERROR', 'SOCKET_AUTH_REJECTED', `Sambungan KDS ditolak: Pengguna bukan pemilik tenant (not_staff)`, { reason: 'not_staff', userId: userData.user.id });
       return next(new Error('not_staff'));
     }
 
@@ -1169,14 +1199,19 @@ staffNamespace.use(async (socket, next) => {
     next();
   } catch (err) {
     console.error('[staff auth] error', err);
+    broadcastHealthLog(DEFAULT_TENANT_ID, 'ERROR', 'SOCKET_AUTH_REJECTED', `Sambungan KDS ditolak: Ralat Pelayan (${err.message})`, { reason: err.message });
     next(new Error('auth_failed'));
   }
 });
 
-
 staffNamespace.on('connection', (socket) => {
   socket.join(socket.data.tenantId);
   console.log(`🔑 [STAFF] Socket ${socket.id} joined room: ${socket.data.tenantId}`);
+  broadcastHealthLog(socket.data.tenantId, 'INFO', 'KDS_CONNECTED', `Peranti KDS terhubung (Socket ID: ${socket.id})`, { socket_id: socket.id });
+
+  socket.on('disconnect', (reason) => {
+    broadcastHealthLog(socket.data.tenantId, 'WARN', 'KDS_DISCONNECTED', `Peranti KDS terputus sambungan (Reason: ${reason})`, { socket_id: socket.id, reason });
+  });
 
   getSupabaseSystemState(socket.data.tenantId)
     .then((state) => socket.emit('INIT_STATE', state))
@@ -1548,13 +1583,16 @@ customerNamespace.on('connection', (socket) => {
 
   socket.on('SUBMIT_ORDER', safeHandler(async (payload, callback) => {
     if (!checkRateLimit(socket.id)) {
+      broadcastHealthLog(tenantId, 'WARN', 'SUBMIT_ORDER_FAILED', `Pesanan ditolak: Had Kekerapan (Rate Limited) [Socket: ${socket.id}]`, { reason: 'rate_limited', socket_id: socket.id });
       return callback && callback({ error: 'rate_limited' });
     }
 
     if (!Array.isArray(payload?.items) || payload.items.length === 0) {
+      broadcastHealthLog(tenantId, 'WARN', 'SUBMIT_ORDER_FAILED', `Pesanan ditolak: Payload Tidak Sah (Items Kosong)`, { reason: 'invalid_payload' });
       return callback && callback({ error: 'invalid_payload' });
     }
     if (payload.items.length > 50) {
+      broadcastHealthLog(tenantId, 'WARN', 'SUBMIT_ORDER_FAILED', `Pesanan ditolak: Terlalu Banyak Item (>50)`, { reason: 'too_many_items' });
       return callback && callback({ error: 'too_many_items' });
     }
     
@@ -1571,6 +1609,7 @@ customerNamespace.on('connection', (socket) => {
       .single();
 
     if (!freshSession || freshSession.status !== 'ACTIVE') {
+      broadcastHealthLog(tenantId, 'ERROR', 'SUBMIT_ORDER_FAILED', `Pesanan Gagal: Sesi Ditutup (${sessionId || 'N/A'})`, { reason: 'session_closed', session_id: sessionId });
       return callback && callback({ error: 'session_closed', message: 'Sesi anda telah ditutup. Pesanan tidak dapat dihantar.' });
     }
 
