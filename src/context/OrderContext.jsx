@@ -699,13 +699,24 @@ export function OrderProvider({ children }) {
         const isCustomerPath = window.location.pathname.includes('customer') || window.location.pathname.includes('/order') || window.location.pathname === '/o' || urlParams.has('session') || urlParams.has('s');
 
         if (isCustomerPath) {
-          const session_id = urlParams.get('session') || urlParams.get('s') || localStorage.getItem('fb_customer_session_id') || 'GUEST';
-          const tenant_id = urlParams.get('tid') || localStorage.getItem('fb_tenant_id');
-          const token = urlParams.get('token') || localStorage.getItem('fb_customer_token');
+          const urlSession = urlParams.get('session') || urlParams.get('s');
+          const localSession = localStorage.getItem('fb_customer_session_id');
+          const session_id = urlSession || localSession || 'GUEST';
           
-          if (urlParams.has('session') || urlParams.has('s')) localStorage.setItem('fb_customer_session_id', session_id);
-          if (urlParams.has('tid')) localStorage.setItem('fb_tenant_id', tenant_id);
-          if (urlParams.has('token')) localStorage.setItem('fb_customer_token', token);
+          const urlTenant = urlParams.get('tid');
+          const tenant_id = urlTenant || localStorage.getItem('fb_tenant_id');
+          
+          let token = urlParams.get('token');
+          // Hanya guna token dari localStorage jika session_id masih sama dengan session_id di localStorage
+          if (!token && session_id === localSession) {
+            token = localStorage.getItem('fb_customer_token');
+          }
+          // Kosongkan token jika tidak sah
+          token = token || '';
+          
+          if (urlSession) localStorage.setItem('fb_customer_session_id', urlSession);
+          if (urlTenant) localStorage.setItem('fb_tenant_id', urlTenant);
+          if (token) localStorage.setItem('fb_customer_token', token);
 
           socketRef.current = io(`${BACKEND_URL}/customer`, {
             transports: ['polling', 'websocket'],

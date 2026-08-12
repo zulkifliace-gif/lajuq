@@ -1242,6 +1242,8 @@ staffNamespace.on('connection', (socket) => {
     const tenantId = socket.data.tenantId;
     const { session_id, client_reported_total } = payload;
     
+    const settings = await getSupabaseSettings(tenantId);
+    
     // Server-side recomputation of orders
     const { data: sessionOrders } = await supabaseAdmin
       .from('orders')
@@ -1259,11 +1261,6 @@ staffNamespace.on('connection', (socket) => {
 
     const difference = Math.abs(serverCalculatedTotal - (client_reported_total || 0));
     
-    // BUSINESS RULE: Toleransi RM1.00 dibenarkan untuk mengelakkan transaksi sah
-    // daripada dihalang (blocked) yang mungkin disebabkan oleh isu rounding kumulatif
-    // (SST & Service Charge) merentasi pelbagai item berlainan dalam satu bil.
-    // Jika perbezaan > RM0.05, ia hanya dilog untuk pemantauan.
-    // Jika perbezaan > RM1.00, ia dianggap anomali material dan transaksi ditolak.
     if (difference > 0.05) {
       await supabaseAdmin.from('payment_discrepancy_log').insert({
         tenant_id: tenantId,
@@ -1274,16 +1271,28 @@ staffNamespace.on('connection', (socket) => {
       });
       console.warn(`[PAYMENT DISCREPANCY] Tenant ${tenantId} Session ${session_id} Client: ${client_reported_total} Server: ${serverCalculatedTotal}`);
       
-      // Reject payment if discrepancy is too high
       if (difference > 1.00) {
         return callback && callback({ error: 'discrepancy_too_high', server_total: serverCalculatedTotal });
       }
     }
 
-    // Update sessions and orders to PAID/CLOSED
-    await supabaseAdmin.from('sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
+    // Update orders to PAID
     await supabaseAdmin.from('orders').update({ payment_status: 'PAID' }).eq('tenant_id', tenantId).eq('session_id', session_id);
-    await supabaseAdmin.from('table_sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
+    
+    // TUGASAN A: Lepaskan pesanan PAYMENT_PENDING ke PENDING supaya masuk dapur
+    await supabaseAdmin.from('orders').update({ kitchen_status: 'PENDING' })
+      .eq('tenant_id', tenantId)
+      .eq('session_id', session_id)
+      .eq('kitchen_status', 'PAYMENT_PENDING');
+
+    // Jika mod POSTPAY, tutup sesi kerana pelanggan makan dulu baru bayar (sudah selesai).
+    // Jika PREPAY, biar sesi kekal AKTIF supaya dapur nampak pesanan dan pelanggan boleh makan.
+    if (settings.operationalMode !== 'PREPAY') {
+      await supabaseAdmin.from('sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
+      await supabaseAdmin.from('table_sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
+      // Kosongkan meja
+      await supabaseAdmin.from('tables').update({ status: 'KOSONG', current_session_id: null }).eq('tenant_id', tenantId).eq('current_session_id', session_id);
+    }
 
     const updatedState = await getSupabaseSystemState(tenantId);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
@@ -1547,7 +1556,7 @@ customerNamespace.on('connection', (socket) => {
         tax: calculatedTax,           // Guna nilai server
         total_amount: calculatedTotal, // Guna nilai server
         special_instruction: payload.specialInstruction || payload.special_notes || null,
-        kitchen_status: 'PENDING',
+        kitchen_status: settings.operationalMode === 'PREPAY' ? 'PAYMENT_PENDING' : 'PENDING',
         payment_status: 'UNPAID',
         client_order_draft_id: client_order_draft_id || null
       })
