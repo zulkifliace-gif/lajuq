@@ -4,7 +4,7 @@ import { isDrinkItem } from '../utils/bluetoothPrinter';
 import KDSSettingsModal from '../components/KDSSettingsModal';
 import KDSStockModal from '../components/KDSStockModal';
 import SystemHealthModal from '../components/SystemHealthModal';
-import { Volume2, VolumeX, Printer, CheckCircle2, ChevronRight, Menu, X, ExternalLink, Activity, ArrowLeft, Utensils, Zap, PackageCheck, Settings, Bluetooth, AlertTriangle, RefreshCw, Layers, Check, Bell, Loader2, Lock, Flame, Coffee, CheckCircle } from 'lucide-react';
+import { Volume2, VolumeX, Printer, CheckCircle2, ChevronRight, Menu, X, ExternalLink, Activity, ArrowLeft, Utensils, Zap, PackageCheck, Settings, Bluetooth, AlertTriangle, RefreshCw, Layers, Check, Bell, Loader2, Lock, Flame, Coffee, CheckCircle, Clock, CheckSquare, ShieldCheck, XCircle, ArrowRight } from 'lucide-react';
 import DemoOverlayGuard from '../components/DemoOverlayGuard';
 import { Link } from 'react-router-dom';
 
