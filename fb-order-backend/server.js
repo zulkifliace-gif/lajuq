@@ -943,7 +943,7 @@ const handlePublicFeedbackSubmission = async (req, res) => {
         .eq('order_id', order_id)
         .maybeSingle();
 
-      if (existingFeedback) {
+      if (existingFeedback && existingFeedback.feedback_id !== body.feedback_id) {
         return res.status(409).json({ status: 'ERROR', message: 'Maklum balas telah pun dihantar untuk pesanan ini.' });
       }
     }
