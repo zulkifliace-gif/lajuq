@@ -686,12 +686,13 @@ export default function MenuEditorPage() {
   const activeCount = safeLocalMenu.filter(i => i && i.isActive !== false).length;
 
   return (
+    <DemoOverlayGuard>
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-rose-500 selection:text-white">
       <Toast msg={toast.msg} type={toast.type} onClose={() => setToast({ msg: "", type: "ok" })} />
       <header className="bg-slate-900/90 backdrop-blur-xl border-b border-slate-800 sticky top-0 z-30 px-4 sm:px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate("/staff")} className="p-2 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition" title="Kembali ke Dashboard"><ArrowLeft className="w-5 h-5" /></button>
+            <button onClick={() => navigate("/staff")} className="demo-bypass p-2 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition" title="Kembali ke Dashboard"><ArrowLeft className="w-5 h-5" /></button>
             <div>
               <span className="text-[11px] font-bold text-rose-400 uppercase tracking-widest">Pengurusan Menu</span>
               <h1 className="font-extrabold text-lg text-white leading-tight">Edit Menu Restoran</h1>
@@ -740,7 +741,6 @@ export default function MenuEditorPage() {
         </div>
       </header>
 
-      <DemoOverlayGuard>
       <main className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 space-y-4 border border-dashed border-slate-800 rounded-3xl">
@@ -1190,7 +1190,6 @@ export default function MenuEditorPage() {
     </div>
   )}
 </main>
-      </DemoOverlayGuard>
 
       {(isAddingNew || editingItem) && (
         <ItemFormModal
@@ -1377,5 +1376,6 @@ export default function MenuEditorPage() {
       />
 
     </div>
+    </DemoOverlayGuard>
   );
 }

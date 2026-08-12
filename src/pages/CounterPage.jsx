@@ -181,12 +181,13 @@ export default function CounterPage() {
   const countSedangMakan = tables.filter(t => t.status === 'SEDANG_MAKAN').length;
 
   return (
+    <DemoOverlayGuard>
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-500 selection:text-white">
       
       {/* POS Top Bar - Responsive Mobile & Tablet Layout */}
       <header className="bg-slate-900/90 border-b border-slate-800 backdrop-blur-md sticky top-0 z-30 px-3 sm:px-6 py-3 sm:py-4 flex flex-col md:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start">
-          <Link to="/staff" className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition" title="Kembali ke Portal Staf">
+          <Link to="/staff" className="demo-bypass p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition" title="Kembali ke Portal Staf">
             <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
           </Link>
           <div className="flex items-center gap-2.5">
@@ -499,7 +500,6 @@ export default function CounterPage() {
       )}
 
       {/* Main Content Area */}
-      <DemoOverlayGuard>
         <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-6 space-y-5 sm:space-y-8">
         
         {/* Status Filter & Summary Bar - Responsive Mobile & Tablet Layout */}
@@ -697,7 +697,6 @@ export default function CounterPage() {
         </div>
 
       </main>
-      </DemoOverlayGuard>
 
       {/* QR MODAL GENERATOR */}
       {selectedTableForQR && generatedSessionId && (
@@ -758,5 +757,6 @@ export default function CounterPage() {
       />
 
     </div>
+    </DemoOverlayGuard>
   );
 }

@@ -11,6 +11,11 @@ export default function DemoOverlayGuard({ children }) {
   }
 
   const handleIntercept = (e) => {
+    // Check if the click target or any of its parents has the 'demo-bypass' class
+    if (e.target && e.target.closest('.demo-bypass')) {
+      return; // Allow the click to pass through
+    }
+
     e.preventDefault();
     e.stopPropagation();
     setShowWarning(true);
