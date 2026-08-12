@@ -458,7 +458,7 @@ export default function KitchenPage() {
           <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs shrink-0">
             <button
               onClick={() => handleStationFilterChange('ALL')}
-              className={`px-2.5 py-1.5 rounded-lg font-extrabold transition flex items-center gap-1 whitespace-nowrap ${
+              className={`demo-bypass px-2.5 py-1.5 rounded-lg font-extrabold transition flex items-center gap-1 whitespace-nowrap ${
                 stationFilter === 'ALL'
                   ? 'bg-amber-500 text-slate-950 shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
@@ -470,7 +470,7 @@ export default function KitchenPage() {
             </button>
             <button
               onClick={() => handleStationFilterChange('FOOD')}
-              className={`px-2.5 py-1.5 rounded-lg font-extrabold transition flex items-center gap-1.5 whitespace-nowrap ${
+              className={`demo-bypass px-2.5 py-1.5 rounded-lg font-extrabold transition flex items-center gap-1.5 whitespace-nowrap ${
                 stationFilter === 'FOOD'
                   ? 'bg-emerald-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
@@ -482,7 +482,7 @@ export default function KitchenPage() {
             </button>
             <button
               onClick={() => handleStationFilterChange('BAR')}
-              className={`px-2.5 py-1.5 rounded-lg font-extrabold transition flex items-center gap-1.5 whitespace-nowrap ${
+              className={`demo-bypass px-2.5 py-1.5 rounded-lg font-extrabold transition flex items-center gap-1.5 whitespace-nowrap ${
                 stationFilter === 'BAR'
                   ? 'bg-indigo-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
@@ -595,7 +595,7 @@ export default function KitchenPage() {
         <div className="flex lg:hidden items-center gap-2">
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 rounded-xl transition cursor-pointer flex items-center gap-1.5 font-bold text-xs shadow-md"
+            className="demo-bypass px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 rounded-xl transition cursor-pointer flex items-center gap-1.5 font-bold text-xs shadow-md"
             aria-label="Buka Menu Navigasi"
           >
             {isMobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
@@ -639,7 +639,7 @@ export default function KitchenPage() {
               <div className="grid grid-cols-1 gap-2">
                 <button
                   onClick={() => { handleStationFilterChange('ALL'); setIsMobileMenuOpen(false); }}
-                  className={`w-full p-3 rounded-2xl font-black text-xs flex items-center justify-between border transition cursor-pointer ${
+                  className={`demo-bypass w-full p-3 rounded-2xl font-black text-xs flex items-center justify-between border transition cursor-pointer ${
                     stationFilter === 'ALL' ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md' : 'bg-slate-950 text-slate-300 border-slate-800'
                   }`}
                 >
@@ -648,7 +648,7 @@ export default function KitchenPage() {
                 </button>
                 <button
                   onClick={() => { handleStationFilterChange('FOOD'); setIsMobileMenuOpen(false); }}
-                  className={`w-full p-3 rounded-2xl font-black text-xs flex items-center justify-between border transition cursor-pointer ${
+                  className={`demo-bypass w-full p-3 rounded-2xl font-black text-xs flex items-center justify-between border transition cursor-pointer ${
                     stationFilter === 'FOOD' ? 'bg-emerald-600 text-white border-emerald-400 shadow-md' : 'bg-slate-950 text-slate-300 border-slate-800'
                   }`}
                 >
@@ -657,7 +657,7 @@ export default function KitchenPage() {
                 </button>
                 <button
                   onClick={() => { handleStationFilterChange('BAR'); setIsMobileMenuOpen(false); }}
-                  className={`w-full p-3 rounded-2xl font-black text-xs flex items-center justify-between border transition cursor-pointer ${
+                  className={`demo-bypass w-full p-3 rounded-2xl font-black text-xs flex items-center justify-between border transition cursor-pointer ${
                     stationFilter === 'BAR' ? 'bg-indigo-600 text-white border-indigo-400 shadow-md' : 'bg-slate-950 text-slate-300 border-slate-800'
                   }`}
                 >
