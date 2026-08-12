@@ -1970,6 +1970,7 @@ export function OrderProvider({ children }) {
       orders,
       feedbacks,
       realtimeStatus,
+      isDemoMode: localStorage.getItem('isDemoMode') === 'true',
       submitCustomerFeedback,
       menuItems,
       updateMenuItems,

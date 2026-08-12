@@ -16,6 +16,7 @@ export default function Home() {
 
   useEffect(() => {
     if (location.search.includes('demo=true')) {
+      localStorage.setItem('isDemoMode', 'true');
       seedSampleDemo();
       navigate('/staff', { replace: true });
     }

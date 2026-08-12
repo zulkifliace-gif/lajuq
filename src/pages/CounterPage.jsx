@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useOrder } from '../context/OrderContext';
 import QRModal from '../components/QRModal';
 import ReceiptModal from '../components/ReceiptModal';
+import DemoOverlayGuard from '../components/DemoOverlayGuard';
 import ReceiptSettingsModal from '../components/ReceiptSettingsModal';
 import EmergencyModeModal from '../components/EmergencyModeModal';
 import TechnicalSupportModal from '../components/TechnicalSupportModal';
@@ -498,7 +499,8 @@ export default function CounterPage() {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-6 space-y-5 sm:space-y-8">
+      <DemoOverlayGuard>
+        <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-6 space-y-5 sm:space-y-8">
         
         {/* Status Filter & Summary Bar - Responsive Mobile & Tablet Layout */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 flex flex-col lg:flex-row items-center justify-between gap-4">
@@ -694,6 +696,7 @@ export default function CounterPage() {
         </div>
 
       </main>
+      </DemoOverlayGuard>
 
       {/* QR MODAL GENERATOR */}
       {selectedTableForQR && generatedSessionId && (

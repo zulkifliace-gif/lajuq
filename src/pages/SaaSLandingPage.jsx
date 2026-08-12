@@ -346,7 +346,7 @@ export default function SaaSLandingPage() {
                 className="px-7 h-14 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-800 font-bold text-sm rounded-full flex items-center justify-center gap-2 transition"
               >
                 <Play className="w-4 h-4 fill-[#F04D23] text-[#F04D23]" />
-                <span>cuba system</span>
+                <span>Lihat Sistem</span>
               </button>
             </div>
 

@@ -4,11 +4,8 @@ import { isDrinkItem } from '../utils/bluetoothPrinter';
 import KDSSettingsModal from '../components/KDSSettingsModal';
 import KDSStockModal from '../components/KDSStockModal';
 import SystemHealthModal from '../components/SystemHealthModal';
-import { 
-  Utensils, Volume2, VolumeX, Flame, CheckCircle2, CheckSquare, 
-  Clock, AlertTriangle, ArrowLeft, RefreshCw, Bell, ShieldCheck, Zap, Lock, XCircle, Printer, Bluetooth,
-  ArrowRight, Layers, Settings, Check, PackageCheck, Menu, X, ChevronRight, Coffee, Activity
-} from 'lucide-react';
+import { Volume2, VolumeX, Printer, CheckCircle2, ChevronRight, Menu, X, ExternalLink, Activity, ArrowLeft, Utensils, Zap, PackageCheck, Settings, Bluetooth, AlertTriangle, RefreshCw, Layers, Check, Bell, Loader2, Lock, Flame, Coffee, CheckCircle } from 'lucide-react';
+import DemoOverlayGuard from '../components/DemoOverlayGuard';
 import { Link } from 'react-router-dom';
 
 // Calculate elapsed minutes from original created_at timestamp
@@ -755,7 +752,8 @@ export default function KitchenPage() {
       )}
 
       {/* Main KDS Stream Area - Responsive Mobile & Tablet Layout */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
+      <DemoOverlayGuard>
+        <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
         
         {/* KDS Counter Stats & Weight Capacity Bar */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 flex flex-col lg:flex-row items-center justify-between gap-4">
@@ -1482,6 +1480,7 @@ export default function KitchenPage() {
         )}
 
       </main>
+      </DemoOverlayGuard>
 
       {/* ITEM & ORDER CANCELLATION MODAL */}
       {cancellationOrder && (

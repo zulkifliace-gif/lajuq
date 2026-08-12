@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import ImageCropperModal from "../components/ImageCropperModal";
 import SubscriptionModal from "../components/SubscriptionModal";
+import DemoOverlayGuard from "../components/DemoOverlayGuard";
 import { supabase } from "../lib/supabaseClient";
 import { getBackendBaseUrl, resolveImageUrl } from '../utils/apiConfig';
 
@@ -739,6 +740,7 @@ export default function MenuEditorPage() {
         </div>
       </header>
 
+      <DemoOverlayGuard>
       <main className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 space-y-4 border border-dashed border-slate-800 rounded-3xl">
@@ -1188,6 +1190,7 @@ export default function MenuEditorPage() {
     </div>
   )}
 </main>
+      </DemoOverlayGuard>
 
       {(isAddingNew || editingItem) && (
         <ItemFormModal
