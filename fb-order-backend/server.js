@@ -1395,7 +1395,25 @@ customerNamespace.on('connection', (socket) => {
   socket.join(socket.data.tenantId); // Join tenant room to receive global updates
 
   getSupabaseSystemState(socket.data.tenantId)
-    .then((state) => socket.emit('INIT_STATE', state))
+    .then(async (state) => {
+      // TUGASAN A: Inject spesifik sesi yang CLOSED supaya UI pelanggan boleh paparkan popup "Sesi Dibatalkan"
+      if (socket.data.sessionId && socket.data.sessionId !== 'GUEST') {
+        const sessionExists = state.sessions.some(s => s.session_id === socket.data.sessionId);
+        if (!sessionExists) {
+          const { data: specificSession } = await supabaseAdmin
+            .from('sessions')
+            .select('*')
+            .eq('session_id', socket.data.sessionId)
+            .eq('tenant_id', socket.data.tenantId)
+            .single();
+            
+          if (specificSession) {
+            state.sessions.push(specificSession);
+          }
+        }
+      }
+      socket.emit('INIT_STATE', state);
+    })
     .catch((err) => {
       console.error('[customer INIT_STATE] error', err);
       socket.emit('INIT_STATE_ERROR', { error: 'load_failed' });
@@ -1417,14 +1435,16 @@ customerNamespace.on('connection', (socket) => {
     const tenantId = socket.data.tenantId;
     const sessionId = socket.data.sessionId;
 
+    // TUGASAN B: Security Check - Pastikan sesi masih wujud dan berstatus ACTIVE
     const { data: freshSession } = await supabaseAdmin
-      .from('table_sessions')
-      .select('status, expires_at')
-      .eq('id', sessionId)
+      .from('sessions')
+      .select('status')
+      .eq('session_id', sessionId)
+      .eq('tenant_id', tenantId)
       .single();
 
-    if (!freshSession || freshSession.status !== 'ACTIVE' || new Date(freshSession.expires_at) <= new Date()) {
-      return callback && callback({ error: 'session_expired' });
+    if (!freshSession || freshSession.status !== 'ACTIVE') {
+      return callback && callback({ error: 'session_closed', message: 'Sesi anda telah ditutup. Pesanan tidak dapat dihantar.' });
     }
 
     const { client_order_draft_id } = payload;
