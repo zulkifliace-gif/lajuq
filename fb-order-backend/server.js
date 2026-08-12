@@ -1676,16 +1676,38 @@ customerNamespace.on('connection', (socket) => {
     }
     
     // In our system, frontend sends payload containing items, customerName, etc.
-    const tenantId = socket.data.tenantId;
-    const sessionId = socket.data.sessionId;
+    const tenantId = socket.data.tenantId || payload?.tenant_id;
+    // PREFER payload.session_id sent explicitly by submitOrder over stale socket.data.sessionId
+    const rawSessionId = payload?.session_id || socket.data.sessionId;
+    const sessionId = (rawSessionId && typeof rawSessionId === 'string' && !rawSessionId.startsWith('SES-') && rawSessionId !== 'GUEST')
+      ? `SES-${rawSessionId}`
+      : (rawSessionId || 'GUEST');
+
+    // Update socket data with normalized session ID
+    socket.data.sessionId = sessionId;
 
     // TUGASAN B: Security Check - Pastikan sesi masih wujud dan berstatus ACTIVE
-    const { data: freshSession } = await supabaseAdmin
-      .from('sessions')
-      .select('status')
-      .eq('session_id', sessionId)
-      .eq('tenant_id', tenantId)
-      .single();
+    let freshSession = null;
+    if (sessionId && sessionId !== 'GUEST') {
+      const { data } = await supabaseAdmin
+        .from('sessions')
+        .select('status')
+        .eq('session_id', sessionId)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      freshSession = data;
+
+      // Fallback: jika tidak ditemui dengan SES- prefix, semak ID mentah
+      if (!freshSession && rawSessionId && rawSessionId !== sessionId) {
+        const { data: rawData } = await supabaseAdmin
+          .from('sessions')
+          .select('status')
+          .eq('session_id', rawSessionId)
+          .eq('tenant_id', tenantId)
+          .maybeSingle();
+        freshSession = rawData;
+      }
+    }
 
     if (!freshSession || freshSession.status !== 'ACTIVE') {
       broadcastHealthLog(tenantId, 'ERROR', 'SUBMIT_ORDER_FAILED', `Pesanan Gagal: Sesi Ditutup (${sessionId || 'N/A'})`, { reason: 'session_closed', session_id: sessionId });
