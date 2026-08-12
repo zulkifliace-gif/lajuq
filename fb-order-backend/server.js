@@ -922,17 +922,17 @@ const handlePublicFeedbackSubmission = async (req, res) => {
     const comment = body.comment || body.feedback || body.message || '';
     const tenantId = req.headers['x-tenant-id'] || body.tenant_id || body.tenantId || 'f75e8dfd-67cd-475f-b88c-2f1ba391e1bc';
 
-    // Check if order exists and is PAID
+    // Check if order exists
     if (order_id !== 'N/A') {
       const { data: orderData } = await supabaseAdmin
         .from('orders')
-        .select('payment_status')
+        .select('order_id')
         .eq('tenant_id', tenantId)
         .eq('order_id', order_id)
         .single();
         
-      if (!orderData || orderData.payment_status !== 'PAID') {
-        return res.status(403).json({ status: 'ERROR', message: 'Sila buat pembayaran sebelum meninggalkan maklum balas.' });
+      if (!orderData) {
+        return res.status(404).json({ status: 'ERROR', message: 'Pesanan tidak dijumpai.' });
       }
 
       // Check if feedback already exists for this order
