@@ -427,6 +427,24 @@ export function OrderProvider({ children }) {
   const [kitchenBtConnecting, setKitchenBtConnecting] = useState(false);
   const [kitchenBtStatusMsg, setKitchenBtStatusMsg] = useState('');
 
+  // KDS Auth Health State & Auto-Refresh Controls
+  const [isKdsAuthFailed, setIsKdsAuthFailed] = useState(false);
+  const failedAuthAttemptsRef = useRef(0);
+
+  const resetKdsAuthStatus = useCallback(async () => {
+    setIsKdsAuthFailed(false);
+    failedAuthAttemptsRef.current = 0;
+    try {
+      const { data: { session } } = await supabase.auth.refreshSession();
+      if (socketRef.current) {
+        socketRef.current.connect();
+      }
+      return session;
+    } catch (e) {
+      console.error('resetKdsAuthStatus error:', e);
+    }
+  }, []);
+
   // KDS Print Error Tracking State
   const [failedPrintOrderIds, setFailedPrintOrderIds] = useState({});
 
@@ -767,23 +785,6 @@ export function OrderProvider({ children }) {
             }
           });
         }
-
-  const [isKdsAuthFailed, setIsKdsAuthFailed] = useState(false);
-  const failedAuthAttemptsRef = useRef(0);
-
-  const resetKdsAuthStatus = async () => {
-    setIsKdsAuthFailed(false);
-    failedAuthAttemptsRef.current = 0;
-    try {
-      const { data: { session } } = await supabase.auth.refreshSession();
-      if (socketRef.current) {
-        socketRef.current.connect();
-      }
-      return session;
-    } catch (e) {
-      console.error('resetKdsAuthStatus error:', e);
-    }
-  };
 
         socketRef.current.on('connect', () => {
           console.log(`🔌 Connected to Socket.io Namespace: ${isCustomerPath ? '/customer' : '/staff'}`);
