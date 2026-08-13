@@ -396,6 +396,9 @@ export async function printReceiptBluetooth(printerConnection, data, settings = 
   const tokenParam = data.accessToken ? `&token=${data.accessToken}` : '';
   const qrUrlStr = `${baseUrl}/o?t=${tableNumber}&s=${cleanSessionIdStr}${tid ? '&tid=' + tid : ''}${tokenParam}`;
   const urlBytes = textToBytes(qrUrlStr);
+  const storeLen = urlBytes.length + 3;
+  const pL = storeLen % 256;
+  const pH = Math.floor(storeLen / 256);
   append(new Uint8Array([0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00])); // Model 2
   append(new Uint8Array([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, 0x05])); // Module size 5
   append(new Uint8Array([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x30])); // Error correction L

@@ -1233,7 +1233,7 @@ export function OrderProvider({ children }) {
 
     return new Promise((resolve) => {
       if (socketRef.current) {
-        socketRef.current.emit('SUBMIT_ORDER', {
+        socketRef.current.timeout(15000).emit('SUBMIT_ORDER', {
           session_id: sessionId,
           table_number: Number(tableNumber),
           client_order_draft_id: orderId, // Used for idempotency check on backend
@@ -1244,11 +1244,13 @@ export function OrderProvider({ children }) {
           total_amount: totalAmount,
           special_notes: overallNote,
           tenant_id: targetTenantId
-        }, (res) => {
-          if (res && res.status === 'ok') {
+        }, (err, res) => {
+          if (err) {
+            resolve({ success: false, error: 'Tiada respon dari pelayan (Timeout). Sila cuba sebentar lagi.' });
+          } else if (res && res.status === 'ok') {
             resolve({ success: true, order: res.order });
           } else {
-            resolve({ success: false, error: res?.error || 'Failed to submit order' });
+            resolve({ success: false, error: res?.error || 'Gagal menghantar pesanan' });
           }
         });
       } else {

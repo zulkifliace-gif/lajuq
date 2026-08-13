@@ -922,17 +922,17 @@ const handlePublicFeedbackSubmission = async (req, res) => {
     const comment = body.comment || body.feedback || body.message || '';
     const tenantId = req.headers['x-tenant-id'] || body.tenant_id || body.tenantId || 'f75e8dfd-67cd-475f-b88c-2f1ba391e1bc';
 
-    // Check if order exists and is PAID
+    // Check if order exists
     if (order_id !== 'N/A') {
       const { data: orderData } = await supabaseAdmin
         .from('orders')
-        .select('payment_status')
+        .select('order_id')
         .eq('tenant_id', tenantId)
         .eq('order_id', order_id)
         .single();
         
-      if (!orderData || orderData.payment_status !== 'PAID') {
-        return res.status(403).json({ status: 'ERROR', message: 'Sila buat pembayaran sebelum meninggalkan maklum balas.' });
+      if (!orderData) {
+        return res.status(404).json({ status: 'ERROR', message: 'Pesanan tidak dijumpai.' });
       }
 
       // Check if feedback already exists for this order
@@ -943,7 +943,7 @@ const handlePublicFeedbackSubmission = async (req, res) => {
         .eq('order_id', order_id)
         .maybeSingle();
 
-      if (existingFeedback) {
+      if (existingFeedback && existingFeedback.feedback_id !== body.feedback_id) {
         return res.status(409).json({ status: 'ERROR', message: 'Maklum balas telah pun dihantar untuk pesanan ini.' });
       }
     }
@@ -1676,6 +1676,9 @@ customerNamespace.on('connection', (socket) => {
     });
 
   socket.on('SUBMIT_ORDER', safeHandler(async (payload, callback) => {
+    // In our system, frontend sends payload containing items, customerName, etc.
+    const tenantId = socket.data.tenantId || payload?.tenant_id;
+
     if (!checkRateLimit(socket.id)) {
       broadcastHealthLog(tenantId, 'WARN', 'SUBMIT_ORDER_FAILED', `Pesanan ditolak: Had Kekerapan (Rate Limited) [Socket: ${socket.id}]`, { reason: 'rate_limited', socket_id: socket.id });
       return callback && callback({ error: 'rate_limited' });
@@ -1690,8 +1693,6 @@ customerNamespace.on('connection', (socket) => {
       return callback && callback({ error: 'too_many_items' });
     }
     
-    // In our system, frontend sends payload containing items, customerName, etc.
-    const tenantId = socket.data.tenantId || payload?.tenant_id;
     // PREFER payload.session_id sent explicitly by submitOrder over stale socket.data.sessionId
     const rawSessionId = payload?.session_id || socket.data.sessionId;
     const strSessionId = rawSessionId ? String(rawSessionId) : '';
