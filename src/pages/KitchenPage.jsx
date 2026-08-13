@@ -45,34 +45,9 @@ export default function KitchenPage() {
   const prevOrderIdsRef = useRef(new Set());
   const isInitialMountRef = useRef(true);
 
-  useEffect(() => {
-    if (!orders || orders.length === 0) return;
-
-    // PAYMENT_PENDING orders are excluded — only PENDING or COOKING trigger KDS chime
-    const currentPendingOrders = orders.filter(o =>
-      o.kitchen_status === 'PENDING' || o.kitchen_status === 'COOKING'
-    );
-    const currentOrderIds = new Set(currentPendingOrders.map(o => o.order_id));
-
-    if (isInitialMountRef.current) {
-      prevOrderIdsRef.current = currentOrderIds;
-      isInitialMountRef.current = false;
-      return;
-    }
-
-    let hasNewOrder = false;
-    currentOrderIds.forEach(id => {
-      if (!prevOrderIdsRef.current.has(id)) {
-        hasNewOrder = true;
-      }
-    });
-
-    prevOrderIdsRef.current = currentOrderIds;
-
-    if (hasNewOrder) {
-      playBeepSound();
-    }
-  }, [orders, playBeepSound]);
+  // NOTA: Blok "New Order Chime" dipindah ke bawah — selepas wave1Orders dikira —
+  // supaya notis hanya bunyi untuk order yang BETUL-BETUL masuk Wave 1, bukan yang
+  // beratur senyap di Wave 2 akibat had kapasiti.
 
   const [activeTab, setActiveTab] = useState('ACTIVE'); // ACTIVE (Wave 1) | QUEUE (Wave 2) | COMPLETED
   const [audioBannerDismissed, setAudioBannerDismissed] = useState(false);
@@ -328,14 +303,18 @@ export default function KitchenPage() {
   const wave2Orders = [];
 
   if (waveMode && waveCapacity > 0) {
+    let runningWeight = 0; // Jumlah BERAT (bukan kiraan) yang sudah masuk Wave 1
     sortedActiveOrders.forEach((ord) => {
+      const w = Number(ord.item_weight) || 1;
       if (ord.wave_number === 2) {
         wave2Orders.push(ord);
       } else if (ord.wave_number === 1) {
         wave1Orders.push(ord);
+        runningWeight += w;
       } else {
-        if (wave1Orders.length < waveCapacity || ord.kitchen_status === 'READY') {
+        if (ord.kitchen_status === 'READY' || runningWeight + w <= waveCapacity) {
           wave1Orders.push({ ...ord, wave_number: 1 });
+          runningWeight += w;
         } else {
           wave2Orders.push({ ...ord, wave_number: 2 });
         }
@@ -354,6 +333,38 @@ export default function KitchenPage() {
 
   // Calculate total active Weight in Wave 1
   const currentWave1Weight = wave1Orders.reduce((sum, o) => sum + (Number(o.item_weight) || 1), 0);
+
+  // 🔔 NEW ORDER CHIME — hanya untuk order yang betul masuk WAVE 1.
+  // Order yang beratur di Wave 2 (melebihi had kapasiti) SENYAP — tiada notis.
+  useEffect(() => {
+    if (!orders || orders.length === 0) return;
+
+    const wave1Ids = new Set(wave1Orders.map(o => o.order_id));
+    const currentPendingOrders = orders.filter(o =>
+      (o.kitchen_status === 'PENDING' || o.kitchen_status === 'COOKING') && wave1Ids.has(o.order_id)
+    );
+    const currentOrderIds = new Set(currentPendingOrders.map(o => o.order_id));
+
+    if (isInitialMountRef.current) {
+      prevOrderIdsRef.current = currentOrderIds;
+      isInitialMountRef.current = false;
+      return;
+    }
+
+    let hasNewOrder = false;
+    currentOrderIds.forEach(id => {
+      if (!prevOrderIdsRef.current.has(id)) {
+        hasNewOrder = true;
+      }
+    });
+
+    prevOrderIdsRef.current = currentOrderIds;
+
+    if (hasNewOrder) {
+      playBeepSound();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders, playBeepSound, wave1Orders]);
 
   // Counts for Stats Bar
   const pendingCount = activeOrders.filter(o => o.kitchen_status === 'PENDING').length;

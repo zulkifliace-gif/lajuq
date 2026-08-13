@@ -442,25 +442,44 @@ export default function CustomerOrderPage() {
   });
 
   // Customer Menu Template State ('modern' | 'kopitiam')
+  // Baca dari localStorage keyed by tid supaya template betul dipapar TERUS tanpa berkelip
   const [customerTemplate, setCustomerTemplate] = useState(() => {
-    return receiptSettings?.customerMenuTemplate || 'modern';
+    const tid = new URLSearchParams(window.location.search).get('tid') || localStorage.getItem('fb_tenant_id') || 'default';
+    const cached = localStorage.getItem(`fb_customer_template_${tid}`);
+    // null = "belum tahu lagi" — JANGAN default terus ke 'modern'
+    return cached || null;
   });
 
   useEffect(() => {
     if (receiptSettings?.customerMenuTemplate) {
+      const tid = new URLSearchParams(window.location.search).get('tid') || localStorage.getItem('fb_tenant_id') || 'default';
       setCustomerTemplate(receiptSettings.customerMenuTemplate);
-      
+      // Cache template ke localStorage supaya lawatan seterusnya tidak berkelip
+      localStorage.setItem(`fb_customer_template_${tid}`, receiptSettings.customerMenuTemplate);
     }
   }, [receiptSettings?.customerMenuTemplate]);
 
+  // Fallback selamat: kalau dalam 3 saat template masih belum sampai (contoh offline/lambat),
+  // baru default ke 'modern' supaya skrin tak blank selama-lamanya
+  useEffect(() => {
+    if (customerTemplate !== null) return;
+    const fallback = setTimeout(() => {
+      setCustomerTemplate(prev => (prev === null ? 'modern' : prev));
+    }, 3000);
+    return () => clearTimeout(fallback);
+  }, [customerTemplate]);
+
   // Customer Menu View Mode State ('grid' | 'book')
   const [customerMenuViewMode, setCustomerMenuViewMode] = useState(() => {
-    return receiptSettings?.customerMenuViewMode || localStorage.getItem('fb_customer_menu_view_mode') || 'grid';
+    const tid = new URLSearchParams(window.location.search).get('tid') || localStorage.getItem('fb_tenant_id') || 'default';
+    return receiptSettings?.customerMenuViewMode || localStorage.getItem(`fb_customer_view_mode_${tid}`) || localStorage.getItem('fb_customer_menu_view_mode') || 'grid';
   });
 
   useEffect(() => {
     if (receiptSettings?.customerMenuViewMode) {
+      const tid = new URLSearchParams(window.location.search).get('tid') || localStorage.getItem('fb_tenant_id') || 'default';
       setCustomerMenuViewMode(receiptSettings.customerMenuViewMode);
+      localStorage.setItem(`fb_customer_view_mode_${tid}`, receiptSettings.customerMenuViewMode);
       localStorage.setItem('fb_customer_menu_view_mode', receiptSettings.customerMenuViewMode);
     }
   }, [receiptSettings?.customerMenuViewMode]);
@@ -1236,6 +1255,18 @@ export default function CustomerOrderPage() {
               />
             </ModuleErrorBoundary>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // ELAK FLICKER: papar loading ringkas dulu selagi template belum diketahui
+  if (customerTemplate === null) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-14 h-14 relative">
+          <div className="absolute inset-0 rounded-full border-4 border-slate-700"></div>
+          <div className="absolute inset-0 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin"></div>
         </div>
       </div>
     );

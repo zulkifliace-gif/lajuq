@@ -40,13 +40,40 @@ function sanitizeInput(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;').replace(/\//g,'&#x2F;').trim();
 }
 
-// Helper: Dapatkan keseluruhan system state dari Supabase (gantikan getSystemState SQLite)
-async function getSupabaseSystemState(tenantId) {
+// ============================================================
+// IN-MEMORY CACHE — Kurangkan panggilan Supabase secara drastik
+// Supabase Free Tier = ~20-30 concurrent connections sahaja!
+// Tanpa cache, server.js membuat 15+ x 5 query = 75+ calls setiap aksi!
+// ============================================================
+const settingsCache = new Map(); // tenantId → { data, expiry }
+const SETTINGS_CACHE_TTL = 30_000; // 30 saat — settings jarang berubah
+
+const stateCache = new Map(); // tenantId → { data, expiry }
+const STATE_CACHE_TTL = 5_000; // 5 saat — state berubah lebih kerap
+
+// Invalidate cache untuk tenant tertentu (panggil apabila settings diubah)
+function invalidateCache(tenantId) {
+  if (tenantId) {
+    settingsCache.delete(tenantId);
+    stateCache.delete(tenantId);
+  }
+}
+
+async function getSupabaseSystemState(tenantId, forceRefresh = false) {
   const tid = tenantId || DEFAULT_TENANT_ID;
+
+  // Semak cache — jika masih segar, pulangkan terus tanpa panggil Supabase
+  if (!forceRefresh && tid) {
+    const cached = stateCache.get(tid);
+    if (cached && Date.now() < cached.expiry) {
+      return cached.data;
+    }
+  }
+
   const [tablesRes, sessionsRes, ordersRes, settingsRes, menuItemsRes] = await Promise.all([
     supabaseAdmin.from('tables').select('*').eq('tenant_id', tid).order('table_number'),
     supabaseAdmin.from('sessions').select('*').eq('tenant_id', tid).eq('status','ACTIVE').order('created_at', { ascending: false }),
-    supabaseAdmin.from('orders').select('*').eq('tenant_id', tid).neq('payment_status','PAID').order('created_at'),
+    supabaseAdmin.from('orders').select('order_id,session_id,table_number,customer_name,order_type,items,total_amount,kitchen_status,payment_status,special_instruction,created_at,tenant_id,client_order_draft_id').eq('tenant_id', tid).neq('payment_status','PAID').order('created_at'),
     supabaseAdmin.from('tenant_settings').select('*').eq('tenant_id', tid).maybeSingle(),
     supabaseAdmin.from('menu_items').select('*').eq('tenant_id', tid).order('sort_order', { ascending: true })
   ]);
@@ -121,15 +148,32 @@ async function getSupabaseSystemState(tenantId) {
   // Convert sessions array to map keyed by session_id
   const sessions = {};
   sessionsArr.forEach(sess => { sessions[sess.session_id] = sess; });
-  return { tables, sessions, orders, menuItems, feedbacks: [], receiptSettings, settings: receiptSettings };
+
+  const result = { tables, sessions, orders, menuItems, feedbacks: [], receiptSettings, settings: receiptSettings };
+
+  // Simpan ke cache (state cache — 5 saat)
+  if (tid) {
+    stateCache.set(tid, { data: result, expiry: Date.now() + STATE_CACHE_TTL });
+  }
+
+  return result;
 }
 
-// Helper: Dapatkan settings dari Supabase
-async function getSupabaseSettings(tenantId) {
+// Helper: Dapatkan tenant settings dari Supabase (dengan cache 30 saat)
+async function getSupabaseSettings(tenantId, forceRefresh = false) {
   const tid = tenantId || DEFAULT_TENANT_ID;
+
+  // Semak cache — jika masih segar, pulangkan terus
+  if (!forceRefresh && tid) {
+    const cached = settingsCache.get(tid);
+    if (cached && Date.now() < cached.expiry) {
+      return cached.data;
+    }
+  }
+
   const { data: s } = await supabaseAdmin.from('tenant_settings').select('*').eq('tenant_id', tid).maybeSingle();
   if (!s) return { operationalMode: 'POSTPAY', waveMode: true, waveCapacity: 10 };
-  return {
+  const result = {
     headerTitle: s.header_title || 'RESTORAN KAMI',
     headerAddress: s.header_address || '',
     receiptHeader: s.receipt_header || 'Selamat Datang!',
@@ -162,6 +206,13 @@ async function getSupabaseSettings(tenantId) {
     telegramChatId: s.telegram_chat_id || '',
     emergencyMode: s.emergency_mode || { enabled: false }
   };
+
+  // Simpan ke cache
+  if (tid) {
+    settingsCache.set(tid, { data: result, expiry: Date.now() + SETTINGS_CACHE_TTL });
+  }
+
+  return result;
 }
 
 // ============================================================
@@ -183,20 +234,21 @@ const requireStaffToken = async (req, res, next) => {
       return res.status(401).json({ status: 'ERROR', message: 'Token tidak sah.' });
     }
 
-    // Ambil profil staf untuk dapatkan tenant_id sebenar
-    const { data: staff, error: staffErr } = await supabaseAdmin
-      .from('staff_profiles')
-      .select('tenant_id, role')
-      .eq('id', userData.user.id)
+    // Guna corak sama macam socket auth (staffNamespace): jadual staff_profiles tidak wujud,
+    // kenal pasti staf melalui tenants.owner_id
+    const { data: tenant, error: tenantErr } = await supabaseAdmin
+      .from('tenants')
+      .select('id, name, slug')
+      .eq('owner_id', userData.user.id)
       .single();
 
-    if (staffErr || !staff) {
+    if (tenantErr || !tenant) {
       return res.status(403).json({ status: 'ERROR', message: 'Akses ditolak: Anda bukan staf yang sah.' });
     }
 
-    req.user = { id: userData.user.id, ...staff };
+    req.user = { id: userData.user.id, role: 'owner' };
     // MESTI pakai tenant_id dari server (token), bukan dari header client yang boleh dipalsukan!
-    req.tenantId = staff.tenant_id;
+    req.tenantId = tenant.id;
     next();
   } catch (err) {
     console.error('[requireStaffToken] Error:', err);
@@ -582,11 +634,13 @@ app.post('/api/settings', requireStaffToken, async (req, res) => {
     console.log(`✅ Supabase tenant_settings updated for tenant: ${tenantId} (termasuk Telegram config)`);
 
     // Broadcast settings terkini ke bilik tenant sahaja
-    const updatedSettings = await getSupabaseSettings(tenantId);
+    // Invalidate cache dahulu supaya data segar diambil dari Supabase
+    invalidateCache(tenantId);
+    const updatedSettings = await getSupabaseSettings(tenantId, true);
     staffNamespace.to(tenantId).emit('SETTINGS_UPDATED', updatedSettings);
     if (newSettings?.emergencyMode) staffNamespace.to(tenantId).emit('EMERGENCY_MODE_TOGGLED', newSettings.emergencyMode);
 
-    const updatedState = await getSupabaseSystemState(tenantId);
+    const updatedState = await getSupabaseSystemState(tenantId, true);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
 
     res.json({ status: 'OK', message: 'Tetapan disimpan ke Supabase Cloud!', data: updatedSettings });
@@ -1332,7 +1386,7 @@ staffNamespace.on('connection', (socket) => {
         .single();
       
       if (existSess) {
-        const updatedState = await getSupabaseSystemState(tenantId);
+        stateCache.delete(tenantId); const updatedState = await getSupabaseSystemState(tenantId);
         staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
         customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
         return callback && callback({ status: 'ok', session: existSess });
@@ -1375,7 +1429,7 @@ staffNamespace.on('connection', (socket) => {
 
     console.log(`✅ [CREATE_SESSION] Meja ${tableNumber} → Sesi ${sessionId} untuk tenant ${tenantId}`);
 
-    const updatedState = await getSupabaseSystemState(tenantId);
+    stateCache.delete(tenantId); const updatedState = await getSupabaseSystemState(tenantId);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok', session: newSession });
@@ -1432,26 +1486,35 @@ staffNamespace.on('connection', (socket) => {
 
     if (error) throw error;
 
-    staffNamespace.to(tenantId).emit('NEW_ORDER_RECEIVED', order);
-    
-    const updatedState = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+    tenantLastOrderMap.set(tenantId, Date.now());
 
+    // Balas client SEGERA lepas order berjaya disimpan dalam DB — jangan tunggu state refresh
     if (callback) callback({ status: 'ok', order });
+
+    staffNamespace.to(tenantId).emit('NEW_ORDER_RECEIVED', order);
+
+    // Refresh + broadcast state secara async (fire-and-forget), tak halang ack ke client
+    stateCache.delete(tenantId);
+    getSupabaseSystemState(tenantId)
+      .then(updatedState => {
+        staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+        customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+      })
+      .catch(err => console.error('[SUBMIT_ORDER] state refresh broadcast error:', err));
   }));
 
   socket.on('UPDATE_KITCHEN_STATUS', safeHandler(async (payload, callback) => {
     const tenantId = socket.data.tenantId;
     const { order_id, status } = payload;
     await supabaseAdmin.from('orders').update({ kitchen_status: status }).eq('tenant_id', tenantId).eq('order_id', order_id);
-    const updatedState = await getSupabaseSystemState(tenantId);
+    stateCache.delete(tenantId); const updatedState = await getSupabaseSystemState(tenantId);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok' });
   }));
 
   socket.on('MARK_STATION_DONE', safeHandler(async (payload, callback) => {
     const tenantId = socket.data.tenantId;
-    const updatedState = await getSupabaseSystemState(tenantId);
+    stateCache.delete(tenantId); const updatedState = await getSupabaseSystemState(tenantId);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok' });
   }));
@@ -1460,7 +1523,7 @@ staffNamespace.on('connection', (socket) => {
     const tenantId = socket.data.tenantId;
     const { order_id, reason } = payload;
     await supabaseAdmin.from('orders').update({ kitchen_status: 'CANCELLED', kitchen_cancel_reason: reason }).eq('tenant_id', tenantId).eq('order_id', order_id);
-    const updatedState = await getSupabaseSystemState(tenantId);
+    stateCache.delete(tenantId); const updatedState = await getSupabaseSystemState(tenantId);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok' });
   }));
@@ -1521,7 +1584,7 @@ staffNamespace.on('connection', (socket) => {
       await supabaseAdmin.from('tables').update({ status: 'KOSONG', current_session_id: null }).eq('tenant_id', tenantId).eq('current_session_id', session_id);
     }
 
-    const updatedState = await getSupabaseSystemState(tenantId);
+    stateCache.delete(tenantId); const updatedState = await getSupabaseSystemState(tenantId);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok' });
   }));
@@ -1531,7 +1594,7 @@ staffNamespace.on('connection', (socket) => {
     const { session_id } = payload;
     await supabaseAdmin.from('sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
     await supabaseAdmin.from('table_sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
-    const updatedState = await getSupabaseSystemState(tenantId);
+    stateCache.delete(tenantId); const updatedState = await getSupabaseSystemState(tenantId);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok' });
   }));
@@ -1555,7 +1618,7 @@ staffNamespace.on('connection', (socket) => {
       updated_at: new Date().toISOString()
     }).eq('tenant_id', tenantId).eq('current_session_id', session_id);
 
-    const updatedState = await getSupabaseSystemState(tenantId);
+    stateCache.delete(tenantId); const updatedState = await getSupabaseSystemState(tenantId);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); 
     customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     staffNamespace.to(tenantId).emit('SESSION_HAS_BEEN_CANCELLED', { session_id, reason: reason || 'Sesi dibatalkan oleh kaunter' });
@@ -1565,7 +1628,7 @@ staffNamespace.on('connection', (socket) => {
   socket.on('RESET_ALL_DATA', safeHandler(async (payload, callback) => {
     const tenantId = socket.data.tenantId;
     // (Implementation similar to /api/reset)
-    const updatedState = await getSupabaseSystemState(tenantId);
+    stateCache.delete(tenantId); const updatedState = await getSupabaseSystemState(tenantId);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     if (callback) callback({ status: 'ok' });
   }));
@@ -1585,7 +1648,7 @@ staffNamespace.on('connection', (socket) => {
       await supabaseAdmin.from('tenant_settings').upsert({ tenant_id: tenantId, ...updateObj, updated_at: new Date().toISOString() }, { onConflict: 'tenant_id' });
     }
     const settings = await getSupabaseSettings(tenantId);
-    const updatedState = await getSupabaseSystemState(tenantId);
+    stateCache.delete(tenantId); const updatedState = await getSupabaseSystemState(tenantId);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
     staffNamespace.to(tenantId).emit('SETTINGS_UPDATED', settings);
     if (payload?.emergencyMode) staffNamespace.to(tenantId).emit('EMERGENCY_MODE_TOGGLED', payload.emergencyMode);
@@ -1844,12 +1907,20 @@ customerNamespace.on('connection', (socket) => {
 
     tenantLastOrderMap.set(tenantId, Date.now());
 
-    staffNamespace.to(tenantId).emit('NEW_ORDER_RECEIVED', order);
-    
-    const updatedState = await getSupabaseSystemState(tenantId);
-    staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
-
+    // Balas client SEGERA lepas order berjaya disimpan dalam DB — jangan tunggu state refresh
     if (callback) callback({ status: 'ok', order });
+
+    staffNamespace.to(tenantId).emit('NEW_ORDER_RECEIVED', order);
+
+    // Refresh + broadcast state secara async (fire-and-forget), tak halang ack ke client
+    stateCache.delete(tenantId);
+    getSupabaseSystemState(tenantId)
+      .then(updatedState => {
+        staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+        customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
+      })
+      .catch(err => console.error('[SUBMIT_ORDER customer] state refresh broadcast error:', err));
+
   }));
 
   socket.on('CUSTOMER_FEEDBACK', safeHandler(async (payload, callback) => {

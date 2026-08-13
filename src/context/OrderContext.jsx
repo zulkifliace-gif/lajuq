@@ -1232,12 +1232,12 @@ export function OrderProvider({ children }) {
     };
 
     return new Promise((resolve) => {
-      if (socketRef.current) {
+      const doSubmit = () => {
         socketRef.current.timeout(15000).emit('SUBMIT_ORDER', {
           session_id: sessionId,
           table_number: Number(tableNumber),
-          client_order_draft_id: orderId, // Used for idempotency check on backend
-          order_id: orderId, // For fallback
+          client_order_draft_id: orderId,
+          order_id: orderId,
           customer_name: formattedName,
           order_type: orderType,
           items: newOrder.items,
@@ -1253,8 +1253,28 @@ export function OrderProvider({ children }) {
             resolve({ success: false, error: res?.error || 'Gagal menghantar pesanan' });
           }
         });
+      };
+
+      if (socketRef.current && socketRef.current.connected) {
+        doSubmit();
+      } else if (socketRef.current) {
+        // Socket wujud tapi belum connect/tengah reconnect — beri 3 saat je untuk cuba sambung
+        // semula, jangan biar pelanggan tunggu 15 saat penuh tanpa sebab jelas
+        let settled = false;
+        const waitTimer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          socketRef.current.off('connect', onConnect);
+          resolve({ success: false, error: 'Sambungan tidak stabil. Sila semak internet anda dan cuba lagi.' });
+        }, 3000);
+        const onConnect = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(waitTimer);
+          doSubmit();
+        };
+        socketRef.current.once('connect', onConnect);
       } else {
-        // Fallback for when socket is disconnected? We must fail since direct DB write is removed.
         resolve({ success: false, error: 'Tiada sambungan internet atau server.' });
       }
     });
@@ -2021,6 +2041,7 @@ export function OrderProvider({ children }) {
       receiptSettings,
       operationalMode: receiptSettings?.operationalMode || 'POSTPAY',
       updateReceiptSettings: async (newSettings) => {
+        const previousSettings = receiptSettings; // simpan nilai lama untuk rollback kalau simpanan gagal
         const merged = { ...receiptSettings, ...newSettings };
         setReceiptSettings(merged);
 
@@ -2042,29 +2063,41 @@ export function OrderProvider({ children }) {
           broadcastState('TABLES_RESIZED', updatedTables, sessions, orders);
         }
 
-        // Emit UPDATE_SETTINGS via Socket.io for real-time multi-device sync
-        if (socketRef.current) {
-          const _tid = tenantRef.current?.id || localStorage.getItem('fb_tenant_id');
-          socketRef.current.emit('UPDATE_SETTINGS', { ...merged, tenant_id: _tid });
-        }
+        // NOTA: UPDATE_SETTINGS socket emit dibuang dari sini — whitelist field di server untuk event ni
+        // tidak termasuk customerMenuTemplate/customerMenuViewMode, jadi broadcast SYSTEM_STATE_UPDATED
+        // yang ia cetuskan akan hantar balik data LAMA dari DB dan "revert" perubahan optimistic di atas
+        // sebelum REST call di bawah sempat simpan ke Supabase. REST /api/settings sudah cukup — ia
+        // simpan SEMUA field (termasuk template) dan broadcast SYSTEM_STATE_UPDATED yang betul selepas siap.
 
         // Send to backend REST API — Express backend will save locally & sync to Supabase Cloud tenant_settings
         const tenantId = tenantRef.current?.id || tenant?.id || localStorage.getItem('fb_tenant_id') || '';
         const BASE = getBackendBaseUrl();
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || '';
 
         try {
           const res = await fetch(`${BASE}/api/settings`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'x-tenant-id': tenantId
+              'x-tenant-id': tenantId,
+              'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({ ...merged, tenant_id: tenantId })
           });
           const data = await res.json();
+
+          if (!res.ok || data?.status === 'ERROR') {
+            console.error('❌ [SETTINGS_SAVE_FAILED]', res.status, data?.message);
+            throw new Error(data?.message || `Gagal simpan tetapan (HTTP ${res.status})`);
+          }
+
           console.log('⚡ [SETTINGS_SAVED]', data?.message || 'OK');
         } catch (e) {
-          console.warn('⚠️ Server offline, saved locally to browser localStorage:', e.message);
+          console.warn('⚠️ Settings save error:', e.message);
+          setReceiptSettings(previousSettings); // rollback — elak UI tunjuk nilai yang tak pernah tersimpan
+          throw e; // lempar semula supaya caller (modal/page) tahu simpanan GAGAL, bukan senyap
         }
       },
       failedPrintOrderIds: failedPrintOrderIds || {},

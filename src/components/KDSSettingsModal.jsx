@@ -31,6 +31,8 @@ export default function KDSSettingsModal({ isOpen, onClose }) {
   const [paperWidth, setPaperWidth] = useState('58mm');
   const [kdsSound, setKdsSound] = useState('DEFAULT');
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
     if (receiptSettings) {
@@ -77,6 +79,8 @@ export default function KDSSettingsModal({ isOpen, onClose }) {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    setSaveError('');
+    setIsSaving(true);
     try {
       await updateReceiptSettings({
         waveCapacity: Number(waveCapacity),
@@ -84,10 +88,12 @@ export default function KDSSettingsModal({ isOpen, onClose }) {
         paperWidth,
         kdsSound
       });
+      onClose(); // tutup HANYA bila simpanan benar-benar berjaya
     } catch (err) {
       console.error('KDS Settings Save Error:', err);
+      setSaveError(err.message || 'Gagal simpan tetapan. Sila cuba lagi.');
     } finally {
-      onClose();
+      setIsSaving(false);
     }
   };
 
@@ -247,20 +253,29 @@ export default function KDSSettingsModal({ isOpen, onClose }) {
             </div>
           </div>
 
+          {/* Mesej Ralat Simpanan */}
+          {saveError && (
+            <div className="bg-rose-500/10 border border-rose-500/40 rounded-xl p-3 text-xs text-rose-300 font-semibold">
+              ⚠️ {saveError}
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-800">
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition"
+              disabled={isSaving}
+              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition disabled:opacity-50"
             >
               Batal
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl text-xs shadow-lg shadow-amber-500/20 transition transform active:scale-95 cursor-pointer"
+              disabled={isSaving}
+              className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl text-xs shadow-lg shadow-amber-500/20 transition transform active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Simpan Tetapan KDS
+              {isSaving ? 'Menyimpan...' : 'Simpan Tetapan KDS'}
             </button>
           </div>
 
