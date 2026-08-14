@@ -73,7 +73,7 @@ async function getSupabaseSystemState(tenantId, forceRefresh = false) {
   const [tablesRes, sessionsRes, ordersRes, settingsRes, menuItemsRes] = await Promise.all([
     supabaseAdmin.from('tables').select('*').eq('tenant_id', tid).order('table_number'),
     supabaseAdmin.from('sessions').select('*').eq('tenant_id', tid).eq('status','ACTIVE').order('created_at', { ascending: false }),
-    supabaseAdmin.from('orders').select('order_id,session_id,table_number,customer_name,order_type,items,total_amount,kitchen_status,payment_status,special_instruction,created_at,tenant_id,client_order_draft_id').eq('tenant_id', tid).neq('payment_status','PAID').order('created_at'),
+    supabaseAdmin.from('orders').select('order_id,session_id,table_number,customer_name,order_type,items,total_amount,kitchen_status,payment_status,special_instruction,created_at,tenant_id,client_order_draft_id').eq('tenant_id', tid).or('payment_status.neq.PAID,kitchen_status.in.(PAYMENT_PENDING,PENDING,COOKING,READY)').neq('kitchen_status', 'CANCELLED').order('created_at'),
     supabaseAdmin.from('tenant_settings').select('*').eq('tenant_id', tid).maybeSingle(),
     supabaseAdmin.from('menu_items').select('*').eq('tenant_id', tid).order('sort_order', { ascending: true })
   ]);
@@ -1579,14 +1579,10 @@ staffNamespace.on('connection', (socket) => {
       .eq('session_id', session_id)
       .eq('kitchen_status', 'PAYMENT_PENDING');
 
-    // Jika mod POSTPAY, tutup sesi kerana pelanggan makan dulu baru bayar (sudah selesai).
-    // Jika PREPAY, biar sesi kekal AKTIF supaya dapur nampak pesanan dan pelanggan boleh makan.
-    if (settings.operationalMode !== 'PREPAY') {
-      await supabaseAdmin.from('sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
-      await supabaseAdmin.from('table_sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
-      // Kosongkan meja
-      await supabaseAdmin.from('tables').update({ status: 'KOSONG', current_session_id: null }).eq('tenant_id', tenantId).eq('current_session_id', session_id);
-    }
+    // Tutup sesi meja dan kosongkan meja untuk pelanggan seterusnya
+    await supabaseAdmin.from('sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
+    await supabaseAdmin.from('table_sessions').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('tenant_id', tenantId).eq('session_id', session_id);
+    await supabaseAdmin.from('tables').update({ status: 'KOSONG', current_session_id: null }).eq('tenant_id', tenantId).eq('current_session_id', session_id);
 
     stateCache.delete(tenantId); const updatedState = await getSupabaseSystemState(tenantId);
     staffNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState); customerNamespace.to(tenantId).emit('SYSTEM_STATE_UPDATED', updatedState);
