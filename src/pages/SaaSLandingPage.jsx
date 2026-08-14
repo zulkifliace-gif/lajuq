@@ -8,6 +8,7 @@ import {
 
 import AuthModal from '../components/AuthModal';
 import SubscriptionModal from '../components/SubscriptionModal';
+import ChangelogModal from '../components/ChangelogModal';
 
 const rotatingWords = ["Restoran", "Kafe", "Kiosk", "Kedai Makan"];
 
@@ -70,6 +71,7 @@ export default function SaaSLandingPage() {
 
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isSubOpen, setIsSubOpen] = useState(false);
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
 
   const [openFaq, setOpenFaq] = useState(null);
 
@@ -1032,6 +1034,22 @@ export default function SaaSLandingPage() {
                   akubotaman@gmail.com
                 </a>
               </p>
+
+              {/* Colorful update.txt Badge Button */}
+              <div className="pt-3">
+                <button
+                  onClick={() => setIsChangelogOpen(true)}
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-[#F04D23]/25 via-[#FF7F27]/25 to-[#FFCA3A]/25 hover:from-[#F04D23]/40 hover:to-[#FFCA3A]/40 border border-[#FF7F27]/50 text-white font-extrabold text-xs shadow-lg shadow-orange-500/10 transition-all transform hover:scale-105 active:scale-95 group cursor-pointer"
+                >
+                  <span className="flex h-2 w-2 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span className="font-mono text-[#FFCA3A] font-bold">update.txt</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-200 group-hover:text-white transition">Log Kemas Kini (15/08/2026) ✨</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1044,6 +1062,15 @@ export default function SaaSLandingPage() {
               <li><a href="#telegram-feedback" className="hover:text-[#F04D23] transition">Feedback Pelanggan</a></li>
               <li><a href="#pricing" className="hover:text-[#F04D23] transition">Pelan Sewaan SaaS</a></li>
               <li><a href="#faq" className="hover:text-[#F04D23] transition">Soalan Lazim (FAQ)</a></li>
+              <li>
+                <button 
+                  onClick={() => setIsChangelogOpen(true)}
+                  className="hover:text-[#F04D23] transition flex items-center gap-1.5 text-left cursor-pointer text-emerald-400 font-bold"
+                >
+                  <span>Log Kemas Kini</span>
+                  <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 text-[9px] font-mono rounded border border-emerald-500/30">update.txt</span>
+                </button>
+              </li>
             </ul>
           </div>
 
@@ -1058,9 +1085,10 @@ export default function SaaSLandingPage() {
         </ScrollReveal>
       </footer>
 
-      {/* Auth & Subscription Modals */}
+      {/* Auth, Subscription & Changelog Modals */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
       <SubscriptionModal isOpen={isSubOpen} onClose={() => setIsSubOpen(false)} />
+      <ChangelogModal isOpen={isChangelogOpen} onClose={() => setIsChangelogOpen(false)} />
 
     </div>
   );
