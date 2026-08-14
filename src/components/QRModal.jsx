@@ -6,10 +6,12 @@ import { printQRSlipBluetooth } from '../utils/bluetoothPrinter';
 
 export default function QRModal({ isOpen, onClose, tableNumber, sessionId }) {
   const { btDevice, sessions } = useOrder();
+  const [resolvedToken, setResolvedToken] = useState('');
   const [copied, setCopied] = useState(false);
   const [btPrinting, setBtPrinting] = useState(false);
   const [btMsg, setBtMsg] = useState('');
 
+  // Lock scroll when open
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -21,14 +23,57 @@ export default function QRModal({ isOpen, onClose, tableNumber, sessionId }) {
     };
   }, [isOpen]);
 
+  // Reset token setiap kali sessionId berubah
+  useEffect(() => {
+    setResolvedToken('');
+  }, [sessionId]);
+
+  // Cari access_token dari state atau Supabase terus
+  useEffect(() => {
+    if (!isOpen || !sessionId) return;
+
+    const cleanId = String(sessionId || '');
+    const normalizedId = cleanId.startsWith('SES-') ? cleanId : `SES-${cleanId}`;
+    const unPrefixedId = cleanId.replace(/^SES-/, '');
+
+    // Cuba cari dalam React state dahulu (pelbagai format kunci)
+    const fromState = sessions?.[normalizedId]?.access_token
+      || sessions?.[unPrefixedId]?.access_token
+      || sessions?.[cleanId]?.access_token
+      || Object.values(sessions || {}).find(s =>
+          String(s.session_id) === normalizedId || Number(s.table_number) === Number(tableNumber)
+        )?.access_token
+      || '';
+
+    if (fromState) {
+      setResolvedToken(fromState);
+      return;
+    }
+
+    // Kalau token tiada dalam state, fetch terus dari Supabase REST API
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseKey) return;
+
+    fetch(`${supabaseUrl}/rest/v1/sessions?session_id=eq.${encodeURIComponent(normalizedId)}&select=access_token&limit=1`, {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      }
+    })
+      .then(r => r.json())
+      .then(data => {
+        const token = data?.[0]?.access_token || '';
+        if (token) setResolvedToken(token);
+      })
+      .catch(() => {});
+  }, [isOpen, sessionId, sessions, tableNumber]);
+
   if (!isOpen || !sessionId) return null;
 
   const cleanId = String(sessionId || '');
-  const normalizedId = cleanId.startsWith('SES-') ? cleanId : `SES-${cleanId}`;
   const unPrefixedId = cleanId.replace(/^SES-/, '');
-  
-  const currentSession = sessions?.[normalizedId] || sessions?.[unPrefixedId] || sessions?.[sessionId] || Object.values(sessions || {}).find(s => String(s.session_id) === normalizedId || Number(s.table_number) === Number(tableNumber));
-  const accessToken = currentSession?.access_token || '';
+  const accessToken = resolvedToken;
 
   // Ultra-Short URL format for GOOJPRT 58mm printer compatibility (/o?t=X&s=YZ)
   const shortSessionId = unPrefixedId;
@@ -51,7 +96,8 @@ export default function QRModal({ isOpen, onClose, tableNumber, sessionId }) {
       await printQRSlipBluetooth(btDevice, {
         tableNumber,
         sessionId,
-        orderUrl
+        orderUrl,     // sudah mengandungi &token= jika accessToken ada
+        accessToken   // hantar juga accessToken sebagai failsafe
       });
       setBtMsg('QR Code Slip berjaya dicetak! 🖨️');
     } catch (err) {
@@ -142,6 +188,11 @@ export default function QRModal({ isOpen, onClose, tableNumber, sessionId }) {
             <div className="mt-2 text-xs font-mono font-bold text-slate-800 tracking-wider">
               {sessionId}
             </div>
+          </div>
+
+          {/* Token status indicator */}
+          <div className={`text-[10px] font-mono px-2 py-1 rounded-lg inline-block ${accessToken ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+            {accessToken ? `✅ Token: ${accessToken.slice(0,8)}...` : '⏳ Memuatkan token...'}
           </div>
 
           {/* Instructions */}
