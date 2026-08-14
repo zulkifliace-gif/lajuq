@@ -599,6 +599,7 @@ export default function CustomerOrderPage() {
   // Order Submission View State (null = menu view, 'SUBMITTED' = status tracking view)
   const [viewState, setViewState] = useState(null);
   const [snapshotTotal, setSnapshotTotal] = useState(null); // simpan jumlah sebelum orders hilang
+  const [dbSessionOrders, setDbSessionOrders] = useState([]); // simpan orders dari Supabase terus bila sesi ditutup
 
   const { tenant } = useAuth();
   const [isQuotaExceededModalOpen, setIsQuotaExceededModalOpen] = useState(false);
@@ -762,6 +763,37 @@ export default function CustomerOrderPage() {
     Boolean(currentSession?.status === 'CLOSED') || 
     Boolean(currentSession?.is_cancelled) ||
     areAllOrdersPaid;
+
+  // Tarik data pesanan terus dari Supabase apabila sesi ditutup (Lapisan Kebal untuk totalPaid & Feedback)
+  useEffect(() => {
+    if (!isSessionClosed || !sessionParam) return;
+    const cleanId = String(sessionParam).trim();
+    const normalizedId = cleanId.startsWith('SES-') ? cleanId : `SES-${cleanId}`;
+    const unPrefixedId = cleanId.replace(/^SES-/, '');
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseKey) return;
+
+    fetch(`${supabaseUrl}/rest/v1/orders?session_id=in.(${encodeURIComponent(normalizedId)},${encodeURIComponent(unPrefixedId)})&kitchen_status=neq.CANCELLED&select=*`, {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          setDbSessionOrders(data);
+          const sum = data.reduce((acc, row) => acc + (Number(row.total_amount) || 0), 0);
+          if (sum > 0) {
+            setSnapshotTotal(sum);
+            try { sessionStorage.setItem(`total_${sessionParam}`, sum); } catch(e) {}
+          }
+        }
+      })
+      .catch(() => {});
+  }, [isSessionClosed, sessionParam]);
 
   const overlayBg = isLight ? 'bg-amber-50' : 'bg-[#121417]';
   const overlayTitle = isLight ? 'text-amber-950' : 'text-amber-50';
@@ -1213,8 +1245,8 @@ export default function CustomerOrderPage() {
   }
 
   if (isSessionClosed) {
-    const validSessionOrders = sessionOrders.filter(o => o.kitchen_status !== 'CANCELLED');
-    // Guna snapshot jika orders dah hilang dari state (semua PAID → hilang dari SYSTEM_STATE)
+    const effectiveOrders = (sessionOrders && sessionOrders.length > 0) ? sessionOrders : dbSessionOrders;
+    const validSessionOrders = effectiveOrders.filter(o => o.kitchen_status !== 'CANCELLED');
     const computedTotal = validSessionOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
     const totalPaid = computedTotal > 0 ? computedTotal : (snapshotTotal || 0);
     const isVoid = Boolean(isCancelled || currentSession?.is_cancelled);
