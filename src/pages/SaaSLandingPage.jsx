@@ -1034,22 +1034,6 @@ export default function SaaSLandingPage() {
                   akubotaman@gmail.com
                 </a>
               </p>
-
-              {/* Colorful update.txt Badge Button */}
-              <div className="pt-3">
-                <button
-                  onClick={() => setIsChangelogOpen(true)}
-                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-[#F04D23]/25 via-[#FF7F27]/25 to-[#FFCA3A]/25 hover:from-[#F04D23]/40 hover:to-[#FFCA3A]/40 border border-[#FF7F27]/50 text-white font-extrabold text-xs shadow-lg shadow-orange-500/10 transition-all transform hover:scale-105 active:scale-95 group cursor-pointer"
-                >
-                  <span className="flex h-2 w-2 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                  <span className="font-mono text-[#FFCA3A] font-bold">update.txt</span>
-                  <span className="text-slate-400">·</span>
-                  <span className="text-slate-200 group-hover:text-white transition">Log Kemas Kini (15/08/2026) ✨</span>
-                </button>
-              </div>
             </div>
           </div>
 
@@ -1065,10 +1049,9 @@ export default function SaaSLandingPage() {
               <li>
                 <button 
                   onClick={() => setIsChangelogOpen(true)}
-                  className="hover:text-[#F04D23] transition flex items-center gap-1.5 text-left cursor-pointer text-emerald-400 font-bold"
+                  className="hover:text-[#F04D23] transition text-left cursor-pointer"
                 >
-                  <span>Log Kemas Kini</span>
-                  <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 text-[9px] font-mono rounded border border-emerald-500/30">update.txt</span>
+                  Log Kemas Kini
                 </button>
               </li>
             </ul>
