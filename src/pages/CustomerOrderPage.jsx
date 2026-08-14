@@ -1195,7 +1195,7 @@ export default function CustomerOrderPage() {
   if (isSessionClosed) {
     const validSessionOrders = sessionOrders.filter(o => o.kitchen_status !== 'CANCELLED');
     const totalPaid = validSessionOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
-    const isVoid = isCancelled || (sessionOrders.length === 0 && currentSession?.status === 'CLOSED');
+    const isVoid = Boolean(isCancelled || currentSession?.is_cancelled);
 
     return (
       <div className={`min-h-screen ${bgPage} flex items-center justify-center p-6 font-sans transition-colors duration-300`}>

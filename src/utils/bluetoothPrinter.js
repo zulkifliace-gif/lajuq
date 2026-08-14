@@ -444,15 +444,19 @@ export async function printReceiptBluetooth(printerConnection, data, settings = 
  */
 export async function printQRSlipBluetooth(printerConnection, data, settings = {}) {
   const { characteristic } = printerConnection;
-  const { tableNumber, sessionId, orderUrl } = data;
+  const { tableNumber, sessionId, orderUrl, accessToken } = data;
 
   const paperWidth = settings.paperWidth || '58mm';
   const headerTitle = settings.headerTitle || 'RESTORAN RASA SELERA';
 
-  const baseUrl = orderUrl ? orderUrl.split('/order')[0].split('/o')[0] : window.location.origin;
-  const cleanSessionId = String(sessionId || '').replace(/^SES-/, '');
-  const tid = localStorage.getItem('fb_tenant_id') || '';
-  const shortUrl = `${baseUrl}/o?t=${tableNumber}&s=${cleanSessionId}${tid ? '&tid=' + tid : ''}`;
+  let shortUrl = orderUrl;
+  if (!shortUrl) {
+    const baseUrl = (typeof window !== 'undefined' && window.location) ? window.location.origin : getBackendBaseUrl();
+    const cleanSessionId = String(sessionId || '').replace(/^SES-/, '');
+    const tid = localStorage.getItem('fb_tenant_id') || '';
+    const tokenParam = (accessToken || data.token) ? `&token=${accessToken || data.token}` : '';
+    shortUrl = `${baseUrl}/o?t=${tableNumber}&s=${cleanSessionId}${tid ? '&tid=' + tid : ''}${tokenParam}`;
+  }
 
   const logoWidthPx = paperWidth === '80mm' ? 384 : paperWidth === '72mm' ? 336 : 256;
 
