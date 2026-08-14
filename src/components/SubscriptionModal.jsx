@@ -219,7 +219,12 @@ export default function SubscriptionModal({ isOpen, onClose, currentTenantId = '
               </div>
 
               {/* Action Button for Free Plan */}
-              {(activeStatus === 'active' || activeStatus === 'past_due') ? (
+              {/* NOTA: pelan percuma turut set subscription_status = 'active' (lihat stripeRoutes.js),
+                  tapi ia TIADA stripe_customer_id sebab tak pernah lalui Stripe. Kena check plan_type
+                  != 'free' juga, jika tidak butang "Urus Langganan di Portal" akan cuba buka portal
+                  Stripe untuk tenant yang tiada rekod Stripe langsung — 404 "Maklumat pelanggan
+                  Stripe tidak dijumpai". */}
+              {(activePlan !== 'free' && (activeStatus === 'active' || activeStatus === 'past_due')) ? (
                 <button
                   onClick={handleManageSubscription}
                   disabled={loadingPlan !== null}
@@ -324,7 +329,7 @@ export default function SubscriptionModal({ isOpen, onClose, currentTenantId = '
               </div>
 
               {/* Action Button for Paid Plan */}
-              {(activeStatus === 'active' || activeStatus === 'past_due') ? (
+              {(activePlan !== 'free' && (activeStatus === 'active' || activeStatus === 'past_due')) ? (
                 <button
                   onClick={handleManageSubscription}
                   disabled={loadingPlan !== null}
