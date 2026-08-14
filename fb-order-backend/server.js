@@ -1678,7 +1678,7 @@ customerNamespace.use(async (socket, next) => {
         .eq('tenant_id', tenant_id)
         .single();
         
-      if (sessionData && sessionData.access_token) {
+      if (sessionData && sessionData.access_token && token) {
         if (token !== sessionData.access_token) {
           return next(new Error('unauthorized_token'));
         }

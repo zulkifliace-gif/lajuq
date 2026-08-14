@@ -1094,6 +1094,19 @@ export function OrderProvider({ children }) {
         }, (response) => {
           clearTimeout(timeout);
           if (response && response.status === 'ok') {
+            if (response.session) {
+              const sess = response.session;
+              const sid = sess.session_id || sess.id;
+              if (sid) {
+                const unPrefixed = String(sid).replace(/^SES-/, '');
+                const prefixed = String(sid).startsWith('SES-') ? sid : `SES-${sid}`;
+                setSessions(prev => ({
+                  ...prev,
+                  [prefixed]: sess,
+                  [unPrefixed]: sess
+                }));
+              }
+            }
             resolve(response.session?.session_id || response.session?.id || null);
           } else {
             resolve(null);

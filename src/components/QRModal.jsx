@@ -23,11 +23,15 @@ export default function QRModal({ isOpen, onClose, tableNumber, sessionId }) {
 
   if (!isOpen || !sessionId) return null;
 
-  const currentSession = sessions?.[sessionId];
+  const cleanId = String(sessionId || '');
+  const normalizedId = cleanId.startsWith('SES-') ? cleanId : `SES-${cleanId}`;
+  const unPrefixedId = cleanId.replace(/^SES-/, '');
+  
+  const currentSession = sessions?.[normalizedId] || sessions?.[unPrefixedId] || sessions?.[sessionId] || Object.values(sessions || {}).find(s => String(s.session_id) === normalizedId || Number(s.table_number) === Number(tableNumber));
   const accessToken = currentSession?.access_token || '';
 
   // Ultra-Short URL format for GOOJPRT 58mm printer compatibility (/o?t=X&s=YZ)
-  const shortSessionId = String(sessionId || '').replace(/^SES-/, '');
+  const shortSessionId = unPrefixedId;
   const tid = localStorage.getItem('fb_tenant_id') || '';
   const orderUrl = `${window.location.origin}/o?t=${tableNumber}&s=${shortSessionId}${tid ? '&tid=' + tid : ''}${accessToken ? '&token=' + accessToken : ''}`;
 
