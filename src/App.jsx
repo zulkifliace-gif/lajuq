@@ -17,12 +17,15 @@ import AdminHealthCheckPage from './pages/AdminHealthCheckPage';
 import StaffPinGuard from './components/StaffPinGuard';
 import GlobalEmergencyOverlay from './components/GlobalEmergencyOverlay';
 
+import { Analytics } from '@vercel/analytics/react';
+
 export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
         <OrderProvider>
           <BrowserRouter>
+          <Analytics />
           {/* GLOBAL EMERGENCY MAINTENANCE MODE LOCK OVERLAY (z-index: 999999) */}
           <GlobalEmergencyOverlay />
           <Routes>

@@ -13,6 +13,7 @@
     "@lottiefiles/dotlottie-react": "^0.19.13",
     "@stripe/stripe-js": "^9.12.1",
     "@supabase/supabase-js": "^2.112.0",
+    "@vercel/analytics": "^2.0.1",
     "canvas-confetti": "^1.9.4",
     "lucide-react": "^0.469.0",
     "qrcode.react": "^4.2.0",
