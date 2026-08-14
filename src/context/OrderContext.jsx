@@ -1726,24 +1726,33 @@ export function OrderProvider({ children }) {
         }
       });
 
-      if (socketRef.current) {
-        socketRef.current.emit('COMPLETE_PAYMENT', {
-          session_id: sessionId,
-          table_number: Number(tableNumber),
-          client_reported_total: client_reported_total
-        }, (res) => {
-          if (res && res.status === 'ok') {
-            resolve(true);
-          } else {
-            console.error('Payment rejected by server:', res?.error);
-            reject(new Error(res?.error || 'Payment failed validation'));
-          }
-        });
-      } else {
-        reject(new Error('No socket connection'));
-      }
+      // Tunggu socket bersambung semula jika sedang reconnect (sehingga 8 saat)
+      const waitAndEmit = (remainingMs) => {
+        if (socketRef.current && socketRef.current.connected) {
+          socketRef.current.emit('COMPLETE_PAYMENT', {
+            session_id: sessionId,
+            table_number: Number(tableNumber),
+            client_reported_total: client_reported_total
+          }, (res) => {
+            if (res && res.status === 'ok') {
+              resolve(true);
+            } else {
+              console.error('Payment rejected by server:', res?.error);
+              reject(new Error(res?.error || 'Payment failed validation'));
+            }
+          });
+        } else if (remainingMs <= 0) {
+          reject(new Error('Sambungan pelayan terputus. Sila muat semula halaman dan cuba lagi.'));
+        } else {
+          console.warn(`[completePayment] Socket belum bersambung, menunggu... (${remainingMs}ms lagi)`);
+          setTimeout(() => waitAndEmit(remainingMs - 300), 300);
+        }
+      };
+
+      waitAndEmit(8000);
     });
   }, [sessions, orders, tables, broadcastState]);
+
 
   const cancelSession = useCallback((sessionId, tableNumber, reason = 'Sesi dibatalkan oleh kaunter') => {
     const updatedSessions = {

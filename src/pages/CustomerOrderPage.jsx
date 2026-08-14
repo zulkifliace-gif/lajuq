@@ -598,6 +598,7 @@ export default function CustomerOrderPage() {
 
   // Order Submission View State (null = menu view, 'SUBMITTED' = status tracking view)
   const [viewState, setViewState] = useState(null);
+  const [snapshotTotal, setSnapshotTotal] = useState(null); // simpan jumlah sebelum orders hilang
 
   const { tenant } = useAuth();
   const [isQuotaExceededModalOpen, setIsQuotaExceededModalOpen] = useState(false);
@@ -728,6 +729,25 @@ export default function CustomerOrderPage() {
 
   // Are all orders submitted under this session marked as PAID?
   const areAllOrdersPaid = sessionOrders.length > 0 && sessionOrders.every(o => o.payment_status === 'PAID');
+
+  // Snapshot total sebelum orders PAID hilang dari state
+  useEffect(() => {
+    if (sessionOrders.length > 0) {
+      const validOrds = sessionOrders.filter(o => o.kitchen_status !== 'CANCELLED');
+      const computed = validOrds.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+      if (computed > 0) {
+        setSnapshotTotal(computed);
+        // Simpan juga dalam sessionStorage sebagai backup
+        try { sessionStorage.setItem(`total_${sessionParam}`, computed); } catch(e) {}
+      }
+    } else if (snapshotTotal === null) {
+      // Cuba pulih dari sessionStorage jika page di-refresh
+      try {
+        const saved = sessionStorage.getItem(`total_${sessionParam}`);
+        if (saved) setSnapshotTotal(Number(saved));
+      } catch(e) {}
+    }
+  }, [sessionOrders, sessionParam]);
 
   // Explicit cancellation flag
   const isCancelled = Boolean(currentSession?.is_cancelled);
@@ -1194,7 +1214,9 @@ export default function CustomerOrderPage() {
 
   if (isSessionClosed) {
     const validSessionOrders = sessionOrders.filter(o => o.kitchen_status !== 'CANCELLED');
-    const totalPaid = validSessionOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
+    // Guna snapshot jika orders dah hilang dari state (semua PAID → hilang dari SYSTEM_STATE)
+    const computedTotal = validSessionOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+    const totalPaid = computedTotal > 0 ? computedTotal : (snapshotTotal || 0);
     const isVoid = Boolean(isCancelled || currentSession?.is_cancelled);
 
     return (
