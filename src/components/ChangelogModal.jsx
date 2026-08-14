@@ -24,127 +24,108 @@ export default function ChangelogModal({ isOpen, onClose }) {
       date: '15/08/2026',
       tag: 'Versi Terkini',
       isLatest: true,
-      title: 'Kemas Kini Kestabilan Sistem, Token QR Bluetooth, Aliran PREPAY & Vercel Analytics',
+      title: 'Peningkatan Kestabilan Sambungan QR, Pengesahan Bayaran Pantas & Prestasi Sistem',
       items: [
         {
-          heading: '1. Kod QR Bluetooth Mengandungi Token Sah',
+          heading: '1. Peningkatan Sambungan Kod QR Slip Resit',
           points: [
-            'Pelanggan yang mengimbas kertas resit QR daripada printer Bluetooth sebelum ini menerima ralat "Pesanan Gagal: Sambungan tidak stabil" kerana tiada parameter token.',
-            'Fungsi cetakan kini secara automatik menyertakan token keselamatan yang sah (&token=...) supaya pesanan terus masuk ke dapur tanpa halangan.'
+            'Mempertingkatkan sambungan bagi pelanggan yang mengimbas kod QR fizikal dari resit cetakan.',
+            'Pesanan pelanggan kini dihantar secara terus ke dapur dengan lebih pantas dan stabil tanpa gangguan sambungan.'
           ]
         },
         {
-          heading: '2. Penjanaan & Carian Token Sesi Serta-Merta (Fallback Supabase REST)',
+          heading: '2. Pengoptimuman Pembukaan Meja Baharu',
           points: [
-            'Menghapuskan isu race condition semasa pembukaan meja baharu di kaunter.',
-            'Token sesi disimpan terus ke dalam state React serta-merta, disokong oleh carian automatik terus ke REST API Supabase jika tiada dalam memori.'
+            'Proses membuka meja dan menjana pautan menu di kaunter kini berlaku serta-merta dengan sandaran keselamatan automatik.'
           ]
         },
         {
-          heading: '3. Skrin Pelanggan: "Bayaran Selesai" vs "Sesi Ditutup"',
+          heading: '3. Paparan Status Bayaran & Maklum Balas Pelanggan',
           points: [
-            'Skrin merah "Sesi Ditutup" kini hanya aktif sekiranya pesanan dibatalkan secara sengaja oleh kaunter (is_cancelled: true).',
-            'Semua sesi yang selesai membuat bayaran akan sentiasa memaparkan skrin hijau "BAYARAN SELESAI / Terima Kasih!" beserta borang maklum balas pelanggan.'
+            'Pelanggan yang telah selesai membuat bayaran akan sentiasa menerima paparan resit digital yang jelas beserta borang penilaian kepuasan pelanggan.'
           ]
         },
         {
-          heading: '4. Penyelarasan Aliran Mod PREPAY (Bayar Dulu) & POSTPAY (Makan Dulu)',
+          heading: '4. Penyelarasan Aliran Mod Bayar Dulu (Pre-Pay) & Makan Dulu (Post-Pay)',
           points: [
-            'Apabila juruwang mengesahkan bayaran di POS (mod PREPAY mahupun POSTPAY), sesi meja terus DITUTUP (CLOSED) dan meja kembali KOSONG untuk pelanggan seterusnya.',
-            'Pesanan makanan dilepaskan ke dapur (PENDING) dan kekal dipaparkan di skrin KDS sehingga staf dapur menekan "Siap & Hidang".'
+            'Sistem meja di kaunter kini dikosongkan secara automatik sebaik sahaja bayaran disahkan bagi melancarkan giliran pelanggan seterusnya.',
+            'Pesanan makanan kekal dipaparkan di skrin dapur (KDS) sehingga tukang masak selesai menyediakan hidangan.'
           ]
         },
         {
-          heading: '5. KDS Dapur Memaparkan Pesanan yang Telah Dibayar',
+          heading: '5. Ketepatan Kiraan Jumlah Bayaran Pelanggan',
           points: [
-            'Membetulkan query backend Express agar pesanan aktif di dapur (PAYMENT_PENDING, PENDING, COOKING, READY) kekal dihantar ke KDS walaupun berstatus PAID.'
+            'Menambah baik ketepatan paparan jumlah bil pada telefon pelanggan supaya sentiasa tepat walaupun halaman dimuat semula (refresh).'
           ]
         },
         {
-          heading: '6. Isu Jumlah Bayaran "RM 0.00" Diperbaiki Sepenuhnya (3 Lapisan Kebal)',
+          heading: '6. Pengoptimuman Kelancaran Panel Kaunter POS',
           points: [
-            'Melaksanakan sandaran 3 lapisan: Memori Langsung ➡️ Rakaman sessionStorage ➡️ Tarik Terus Database Supabase (REST API).',
-            'Jumlah bayaran sebenar (contoh: RM 45.50) dan senarai makanan untuk dinilai kekal dipaparkan dengan tepat walaupun pelanggan me-refresh halaman telefon berkali-kali.'
+            'Mempercepat proses pengesahan bayaran di kaunter dan menghapuskan notifikasi berulang untuk pengalaman juruwang yang lebih lancar.'
           ]
         },
         {
-          heading: '7. Semakan Discrepancy Bayaran & Aliran POS',
+          heading: '7. Integrasi Analitik Trafik Laman Web',
           points: [
-            'Mengelakkan penolakan "discrepancy_too_high" apabila pelayar kaunter baru kembali aktif dari background.',
-            'Modal bil di POS kekal dibuka sehingga pelayan mengesahkan transaksi berjaya.'
+            'Menambah pemantauan analitik trafik rasmi bagi memantau prestasi sistem dan bilangan pelawat harian secara langsung.'
           ]
         },
         {
-          heading: '8. Pemasangan Rasmi Vercel Analytics',
+          heading: '8. Pemantapan Sistem Automasi Langganan',
           points: [
-            'Pemasangan pakej rasmi @vercel/analytics/react untuk menjejak jumlah pelawat harian, paparan halaman, dan klik secara masa nyata di Vercel Dashboard.'
-          ]
-        },
-        {
-          heading: '9. Pembersihan UI Panel POS Kaunter',
-          points: [
-            'Memadam notifikasi toast terapung selepas bayaran disahkan bagi memastikan antaramuka juruwang kekal kemas, bersih, dan pantas.'
-          ]
-        },
-        {
-          heading: '10. Segerak Stripe Webhook Secret Live',
-          points: [
-            'Kemas kini secret webhook Stripe di pelayan VPS bagi memastikan pembaharuan langganan automatik (auto-renewal) menyegerak status penyewa di Supabase tanpa ralat.'
+            'Memperkukuh komunikasi selamat antara gerbang pembayaran dengan pelayan sistem bagi pembaharuan langganan yang lebih lancar.'
           ]
         }
       ]
     },
     {
       date: '13/08/2026',
-      tag: 'Infrastruktur & Langganan',
+      tag: 'Infrastruktur & Keselamatan',
       isLatest: false,
-      title: 'Integrasi Stripe Webhook Live, Multi-Tenant Socket Isolation & Sandaran Database',
+      title: 'Peningkatan Keselamatan Data Multi-Restoran & Automasi Langganan',
       items: [
         {
-          heading: '1. Integrasi Webhook Stripe Live & Pakej Langganan',
+          heading: '1. Pengasingan Data Restoran yang Lebih Ketat',
           points: [
-            'Penetapan endpoint webhook rasmi di Express backend (api.lajuq.my/api/stripe/webhook) untuk mengendalikan pengaktifan langganan pelan 4, 8, dan 12 bulan secara automatik.',
-            'Penyelarasan kunci rahsia live Stripe dan penyulitan data langganan penyewa.'
+            'Memperkukuh keselamatan komunikasi antara peranti bagi memastikan data setiap restoran sentiasa terlindung dan terasing sepenuhnya.'
           ]
         },
         {
-          heading: '2. Pengasingan Soket Multi-Penyewa (Tenant Socket Isolation)',
+          heading: '2. Peningkatan Automasi Pembayaran Langganan',
           points: [
-            'Setiap restoran kini mempunyai bilik komunikasi soket (Socket.io room) tersendiri berasaskan tenant_id.',
-            'Mengelakkan percampuran data pesanan dan pesanan staf antara restoran yang berbeza.'
+            'Penyelarasan sistem pembayaran digital bagi pakej sewaan 4, 8, dan 12 bulan secara automatik tanpa perlu pengesahan manual.'
           ]
         },
         {
-          heading: '3. Penambahbaikan Maklum Balas Pelanggan & Telegram Bot',
+          heading: '3. Sistem Maklum Balas & Notifikasi Pengurusan',
           points: [
-            'Penstrukturan skema pangkalan data maklum balas pelanggan (customer_feedbacks) bagi menyokong penilaian menu dan komen.'
+            'Penambahbaikan ciri ulasan pelanggan dan integrasi notifikasi terus ke telefon pintar pihak pengurusan restoran.'
           ]
         }
       ]
     },
     {
       date: '10/08/2026',
-      tag: 'Penguatkuasaan Kuota & POS',
+      tag: 'Ciri-Ciri Utama & POS',
       isLatest: false,
-      title: 'Penguatkuasaan Kuota Pelan Percuma, Format Thermal Printer & Grid Meja',
+      title: 'Pengurusan Kuota Pelan Percuma, Keserasian Pencetak Resit & Status Meja',
       items: [
         {
-          heading: '1. Perlindungan Kuota Pelan Percuma (100 Pesanan Sebulan)',
+          heading: '1. Pengurusan Had Pesanan Pelan Percuma',
           points: [
-            'Pelaksanaan fungsi penguatkuasaan kuota pesanan di peringkat database trigger dan socket backend.',
-            'Popup kiraan undur kitaran 30 hari untuk penyewa yang telah mencapai had kuota percuma.'
+            'Pelaksanaan had 100 pesanan percuma sebulan dengan sistem notifikasi kitaran penggunaan yang telus.'
           ]
         },
         {
-          heading: '2. Format Cetakan Thermal Printer GOOJPRT (58mm & 80mm)',
+          heading: '2. Keserasian Pencetak Resit Bluetooth (Thermal Printer)',
           points: [
-            'Pengoptimuman arahan native ESC/POS untuk cetakan slip QR Code sesi yang padat dan jelas pada pencetak haba Bluetooth.'
+            'Menyokong pelbagai model pencetak haba mudah alih (58mm & 80mm) dengan format teks dan kod QR yang kemas.'
           ]
         },
         {
-          heading: '3. Paparan Grid Meja Pintar POS',
+          heading: '3. Panel Grid Meja Pintar Masa Nyata',
           points: [
-            'Penambahbaikan antaramuka grid meja di POS Kaunter dengan penunjuk warna status masa nyata (Kosong, Ada Pelanggan, Sedang Makan, Pre-Pay Bayaran).'
+            'Paparan status meja interaktif berkod warna di panel kaunter untuk memudahkan pemantauan operasi dewan makan.'
           ]
         }
       ]
@@ -162,14 +143,8 @@ export default function ChangelogModal({ isOpen, onClose }) {
               <Terminal className="w-5 h-5 text-white" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-black text-base sm:text-lg text-white">Log Kemas Kini Sistem</h3>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold border border-emerald-500/30 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  update.txt
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 font-medium">Sejarah naik taraf & pembaikan ciri LajuQ SaaS</p>
+              <h3 className="font-black text-base sm:text-lg text-white">Log Kemas Kini Sistem</h3>
+              <p className="text-xs text-slate-400 font-medium">Sejarah penambahbaikan & naik taraf ciri LajuQ SaaS</p>
             </div>
           </div>
 
@@ -193,7 +168,7 @@ export default function ChangelogModal({ isOpen, onClose }) {
                 <div className="h-px bg-gradient-to-r from-transparent via-[#F04D23]/40 to-[#F04D23] flex-1"></div>
                 <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#1E2532] border border-white/10 shadow-sm font-mono font-extrabold text-xs">
                   <Calendar className="w-3.5 h-3.5 text-[#FF7F27]" />
-                  <span className="text-white">update {log.date}</span>
+                  <span className="text-white">Kemas Kini {log.date}</span>
                   {log.isLatest && (
                     <span className="px-1.5 py-0.2 bg-[#F04D23] text-white text-[9px] font-sans font-black rounded-md tracking-wider uppercase ml-1">
                       TERBARU
@@ -216,7 +191,7 @@ export default function ChangelogModal({ isOpen, onClose }) {
                 </div>
 
                 {/* Updates List */}
-                <div className="space-y-4 pt-2">
+                <div className="space-y-3 pt-2">
                   {log.items.map((item, iIdx) => (
                     <div key={iIdx} className="space-y-1.5 bg-[#12151D]/60 p-3 rounded-xl border border-white/5">
                       <p className="font-bold text-slate-100 text-xs sm:text-sm text-[#FF7F27]">
@@ -240,14 +215,14 @@ export default function ChangelogModal({ isOpen, onClose }) {
 
           {/* Footer Note */}
           <div className="text-center pt-2 pb-2 text-[11px] text-slate-500 font-mono">
-            Sistem LajuQ dikemas kini secara berterusan oleh BOTZ Global Solutions.
+            Sistem LajuQ sentiasa dipantau & dikemas kini secara berkala demi menjamin prestasi terbaik.
           </div>
 
         </div>
 
         {/* Modal Footer */}
         <div className="bg-[#1A1F2B] px-6 py-3 border-t border-white/10 flex items-center justify-between shrink-0">
-          <span className="text-[11px] text-slate-400 font-mono">Status Sistem: <strong className="text-emerald-400">100% Aktif</strong></span>
+          <span className="text-[11px] text-slate-400 font-mono">Status Sistem: <strong className="text-emerald-400">100% Beroperasi</strong></span>
           <button
             onClick={onClose}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs transition cursor-pointer"
