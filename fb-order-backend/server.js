@@ -1551,7 +1551,9 @@ staffNamespace.on('connection', (socket) => {
 
     const difference = Math.abs(serverCalculatedTotal - (client_reported_total || 0));
     
-    if (difference > 0.05) {
+    // Jika client_reported_total = 0, bermakna state belum sync (tab baru kembali dari background)
+    // Dalam kes ini, percayai server total sahaja dan teruskan tanpa reject
+    if (client_reported_total > 0 && difference > 0.05) {
       await supabaseAdmin.from('payment_discrepancy_log').insert({
         tenant_id: tenantId,
         session_id: session_id,
@@ -1564,6 +1566,8 @@ staffNamespace.on('connection', (socket) => {
       if (difference > 1.00) {
         return callback && callback({ error: 'discrepancy_too_high', server_total: serverCalculatedTotal });
       }
+    } else if (client_reported_total === 0) {
+      console.log(`[COMPLETE_PAYMENT] client_reported_total=0, state belum sync — guna server total: ${serverCalculatedTotal}`);
     }
 
     // Update orders to PAID

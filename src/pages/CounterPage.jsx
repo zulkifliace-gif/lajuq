@@ -42,6 +42,14 @@ export default function CounterPage() {
   // Double-submit guard: prevent cashier from pressing 'Sahkan Bayaran' twice
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
 
+  // Toast notification selepas bayaran berjaya (PREPAY mod)
+  const [paymentToast, setPaymentToast] = useState(null); // { tableNumber, total }
+
+  const showPaymentToast = (tableNumber, total) => {
+    setPaymentToast({ tableNumber, total });
+    setTimeout(() => setPaymentToast(null), 5000);
+  };
+
   // Lock background body scroll when mobile menu drawer is open
   useEffect(() => {
     if (isMobileMenuOpen) {
@@ -137,12 +145,19 @@ export default function CounterPage() {
   const handleConfirmPayment = async (sessionId, tableNumber) => {
     if (isConfirmingPayment) return; // Prevent double-submit
     setIsConfirmingPayment(true);
-    // Close modal immediately so cashier can't press twice
-    setSelectedTableForBilling(null);
+    // JANGAN tutup modal dulu — tunggu server sahkan dulu
     try {
       await completePayment(sessionId, tableNumber);
+      // Berjaya — kira jumlah untuk toast
+      const sessionOrds = orders.filter(o =>
+        o.session_id === sessionId && o.kitchen_status !== 'CANCELLED'
+      );
+      const total = sessionOrds.reduce((s, o) => s + (Number(o.total_amount) || 0), 0);
+      setSelectedTableForBilling(null); // tutup modal SELEPAS berjaya
+      showPaymentToast(tableNumber, total);
     } catch (err) {
-      alert(`Ralat pembayaran: ${err.message}`);
+      // Tunjuk ralat — modal kekal terbuka supaya juruwang boleh cuba lagi
+      alert(`Ralat pembayaran: ${err.message}\n\nSila cuba tekan semula butang Sahkan Bayaran.`);
     } finally {
       setTimeout(() => setIsConfirmingPayment(false), 1500);
     }
@@ -697,6 +712,22 @@ export default function CounterPage() {
         </div>
 
       </main>
+
+      {/* TOAST NOTIFIKASI BAYARAN BERJAYA */}
+      {paymentToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fadeIn">
+          <div className="flex items-center gap-3 bg-emerald-600 text-white px-5 py-3.5 rounded-2xl shadow-2xl shadow-emerald-600/40 border border-emerald-400/30">
+            <CheckCircle2 className="w-5 h-5 shrink-0" />
+            <div>
+              <p className="font-extrabold text-sm">Bayaran Berjaya — Meja {paymentToast.tableNumber}</p>
+              <p className="text-xs text-emerald-100 font-mono mt-0.5">
+                {paymentToast.total > 0 ? `RM ${paymentToast.total.toFixed(2)} · ` : ''}Pesanan dihantar ke dapur ✅
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* QR MODAL GENERATOR */}
       {selectedTableForQR && generatedSessionId && (
