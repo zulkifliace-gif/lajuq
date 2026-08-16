@@ -1977,73 +1977,98 @@ export default function CustomerOrderPage() {
                   </div>
                 </div>
               ) : (
-                /* MODE KAD / GRID VIEW */
+                /* MODE KAD / GRID VIEW — Premium 2-Column Kopitiam Grid (1 Line 2 Kad) */
                 filteredKopitiamItems.length === 0 ? (
-                  <div className="text-center text-[#9B9D8F] text-xs py-12 bg-[#FAF7EF] rounded-3xl border border-black/10">
+                  <div className="text-center text-[#9B9D8F] text-xs py-12 bg-[#FAF7EF] rounded-3xl border-2 border-black/10 shadow-sm">
                     Tiada hidangan dijumpai untuk &ldquo;{searchQuery || activeCategory}&rdquo;
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
                     {filteredKopitiamItems.map(dish => {
                       const bgBadge = getKopitiamCategoryBg(dish.category);
                       const emoji = getCategoryEmoji(dish);
                       const isOut = isItemOutOfStock(dish);
+                      const isRec = !isOut && (recommendedItemIds.has(dish.id) || recommendedItemIds.has(dish.name));
 
                       return (
                         <div
                           key={dish.id}
                           onClick={() => !isOut && handleOpenItemModal(dish)}
-                          className={`bg-[#FAF7EF] rounded-2xl p-3 sm:p-3.5 shadow-sm border border-black/10 flex items-center gap-3 transition transform ${
-                            isOut ? 'opacity-50 grayscale filter cursor-not-allowed' : 'cursor-pointer active:scale-[0.98]'
+                          className={`group relative flex flex-col bg-[#FAF7EF] rounded-2xl sm:rounded-3xl border-2 border-black/10 overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 transform ${
+                            isOut ? 'opacity-50 grayscale cursor-not-allowed' : 'cursor-pointer active:scale-[0.97]'
                           }`}
                         >
-                          <div
-                            className="w-15 h-15 rounded-xl flex items-center justify-center shrink-0 shadow-sm overflow-hidden relative"
-                            style={{ backgroundColor: bgBadge, width: '60px', height: '60px' }}
+                          {/* Image Zone (Large Aspect Ratio) */}
+                          <div 
+                            className="relative w-full aspect-[4/3] sm:aspect-square overflow-hidden flex items-center justify-center bg-[#F0EDE1]"
+                            style={{ backgroundColor: bgBadge || '#F0EDE1' }}
                           >
                             {hasValidImage(dish.image) && !brokenImageIds.has(dish.id || dish.name) ? (
                               <img
                                 src={resolveImageUrl(dish.image)}
                                 alt={dish.name}
                                 onError={() => handleImageError(dish.id || dish.name)}
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                               />
                             ) : (
-                              <span className="text-2xl">{emoji}</span>
+                              <span className="text-4xl sm:text-5xl drop-shadow-sm select-none">{emoji}</span>
+                            )}
+
+                            {/* Badge: Recommended */}
+                            {isRec && (
+                              <div className="absolute top-2 left-2 z-10">
+                                <span className="font-spacemono text-[9px] sm:text-[10px] font-bold bg-[#F3E3C0]/95 text-[#163F35] px-2 py-0.5 rounded-full border border-[#163F35]/30 flex items-center gap-1 shadow-sm backdrop-blur-xs">
+                                  ⭐ Pilihan
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Stock Habis Overlay */}
+                            {isOut && (
+                              <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-10">
+                                <span className="font-spacemono text-[10px] font-bold text-white bg-rose-600 px-2.5 py-1 rounded-full uppercase tracking-wider shadow">
+                                  Habis 🔴
+                                </span>
+                              </div>
                             )}
                           </div>
 
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <h3 className={`font-zilla font-bold text-base text-[#22262B] leading-tight truncate ${isOut ? 'line-through text-[#6B6F66]' : ''}`}>
+                          {/* Card Content Zone */}
+                          <div className="p-2.5 sm:p-3 flex flex-col flex-1 justify-between gap-1.5">
+                            <div>
+                              <h3 className={`font-zilla font-bold text-sm sm:text-base text-[#22262B] leading-tight line-clamp-2 ${isOut ? 'line-through text-[#6B6F66]' : ''}`}>
                                 {dish.name}
                               </h3>
-                              {isOut && (
-                                <span className="font-spacemono text-[9px] font-bold text-white bg-rose-600 px-1.5 py-0.2 rounded shadow-xs">
-                                  Stock Habis 🔴
-                                </span>
+                              {dish.description && (
+                                <p className="text-[11px] text-[#6B6F66] mt-0.5 line-clamp-1 leading-snug">
+                                  {dish.description}
+                                </p>
                               )}
                             </div>
-                            <p className="text-[12px] text-[#6B6F66] mt-0.5 line-clamp-2 leading-snug">
-                              {dish.description || 'Hidangan segar disediakan segar dari dapur kami.'}
-                            </p>
 
-                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                              <span className="font-spacemono font-bold text-xs text-[#163F35]">
+                            {/* Price & Add Button Row */}
+                            <div className="flex items-center justify-between mt-auto pt-1.5 border-t border-black/5">
+                              <span className="font-spacemono font-black text-xs sm:text-sm text-[#163F35]">
                                 RM {Number(dish.price).toFixed(2)}
                               </span>
-                              {!isOut && (recommendedItemIds.has(dish.id) || recommendedItemIds.has(dish.name)) && (
-                                <span className="font-spacemono text-[9.5px] font-bold bg-[#F3E3C0] text-[#163F35] px-2 py-0.5 rounded-full border border-[#163F35]/30 flex items-center gap-1 shadow-xs animate-pulse">
-                                  ⭐ Recommended
-                                </span>
-                              )}
-                            </div>
-                          </div>
 
-                          <div className={`w-7.5 h-7.5 rounded-full flex items-center justify-center shrink-0 shadow-sm font-bold ${
-                            isOut ? 'bg-gray-300 text-gray-500' : 'bg-[#D9E5DF] text-[#1F5B4A]'
-                          }`}>
-                            <Plus className="w-4 h-4" />
+                              <button
+                                type="button"
+                                disabled={isOut}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!isOut) handleOpenItemModal(dish);
+                                }}
+                                className={`h-7 sm:h-8 px-2 sm:px-2.5 rounded-xl font-spacemono font-bold text-xs flex items-center gap-1 shadow-xs transition-all active:scale-90 ${
+                                  isOut
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-[#1F5B4A] hover:bg-[#163F35] text-[#EDE7D8] cursor-pointer'
+                                }`}
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span className="text-[10.5px]">Pilih</span>
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
